@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}OBLIGRAPH - Autonomous Contract-to-Execution Obligation Graph Engine{% endblock %}
+
+{% block content %}
+<div class="position-relative">
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="hero-pill">
+      <i class="bi bi-shield-check"></i>
+      <span>Autonomous Contract Execution & Predictive Compliance</span>
+    </div>
+    <h1 class="hero-title">
+      Contract-to-Execution <br>
+      Obligation Graph Engine
+    </h1>
+    <p class="hero-subtitle">
+      Obligraph bridges the gap between legal prose and operational execution. 
+      Clauses are automatically extracted into deterministic records, verified against live multi-source evidence 
+      with calibrated trust weights, and monitored with predictive risk scoring before breaches occur.
+    </p>
+
+    <div class="d-flex flex-wrap align-items-center justify-content-center gap-2">
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary px-4 py-2 d-inline-flex align-items-center gap-2">
+        <i class="bi bi-speedometer2"></i>
+        <span>Open Compliance Dashboard</span>
+      </a>
+      <a href="{{ url_for('contracts.upload') }}" class="btn btn-outline-secondary px-4 py-2 d-inline-flex align-items-center gap-2">
+        <i class="bi bi-file-earmark-arrow-up"></i>
+        <span>Ingest Contract</span>
+      </a>
+      <a href="{{ url_for('escalations.index') }}" class="btn btn-outline-secondary px-4 py-2 d-inline-flex align-items-center gap-2">
+        <i class="bi bi-shield-lock"></i>
+        <span>Verify Hash Chain</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- 6-Stage Autonomous Pipeline Flowchart -->
+  <section class="my-5">
+    <div class="text-center mb-4">
+      <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-3 py-1 text-uppercase fw-semibold" style="font-size: 0.72rem;">
+        Deterministic Architecture
+      </span>
+      <h2 class="h4 fw-bold mt-2">The 6-Stage Autonomous Compliance Pipeline</h2>
+      <p class="text-muted small max-w-xl mx-auto">
+        From raw PDF ingestion to tamper-evident cryptographic log — fully deterministic execution after extraction.
+      </p>
+    </div>
+
+    <div class="pipeline-container">
+      <!-- Step 1 -->
+      <div class="pipeline-step">
+        <span class="pipeline-num">STAGE 01</span>
+        <div class="pipeline-icon"><i class="bi bi-file-earmark-pdf"></i></div>
+        <h4 class="pipeline-title">Contract Ingestion</h4>
+        <p class="pipeline-desc">
+          Parses native PDF & DOCX agreements with regex fallback for clause splitting and section hierarchy.
+        </p>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="pipeline-step">
+        <span class="pipeline-num">STAGE 02</span>
+        <div class="pipeline-icon"><i class="bi bi-cpu"></i></div>
+        <h4 class="pipeline-title">LLM Clause Extraction</h4>
+        <p class="pipeline-desc">
+          Translates clauses into strict 6-field structured JSON records (actor, deadline, target, expected state).
+        </p>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="pipeline-step">
+        <span class="pipeline-num">STAGE 03</span>
+        <div class="pipeline-icon"><i class="bi bi-bezier2"></i></div>
+        <h4 class="pipeline-title">Dependency Graph</h4>
+        <p class="pipeline-desc">
+          Maps upstream prerequisite clauses to downstream conditions, calculating ripple risk across obligations.
+        </p>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="pipeline-step">
+        <span class="pipeline-num">STAGE 04</span>
+        <div class="pipeline-icon"><i class="bi bi-database-check"></i></div>
+        <h4 class="pipeline-title">Multi-Source Evidence</h4>
+        <p class="pipeline-desc">
+          Ingests emails (IMAP), Google Sheets, and ERP telemetry with mathematically weighted trust levels (0.4 - 1.0).
+        </p>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="pipeline-step">
+        <span class="pipeline-num">STAGE 05</span>
+        <div class="pipeline-icon"><i class="bi bi-calculator"></i></div>
+        <h4 class="pipeline-title">Risk & Dispute Engine</h4>
+        <p class="pipeline-desc">
+          Computes target deviation, trust deficit & deadline proximity. Opens 48h counter-evidence dispute window.
+        </p>
+      </div>
+
+      <!-- Step 6 -->
+      <div class="pipeline-step">
+        <span class="pipeline-num">STAGE 06</span>
+        <div class="pipeline-icon"><i class="bi bi-link-45deg"></i></div>
+        <h4 class="pipeline-title">Hash-Chain Escalation</h4>
+        <p class="pipeline-desc">
+          Logs unresolved breaches into an immutable SHA-256 hash-chained log with one-click cryptographic tamper verification.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- The "Clause -> Record -> Verified Evidence -> Alert" Closed Loop -->
+  <section class="my-5 py-3">
+    <div class="card-modern p-4">
+      <div class="row align-items-center g-4">
+        <div class="col-lg-5">
+          <div class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1 mb-3" style="font-size: 0.75rem;">Execution Model</div>
+          <h3 class="h5 fw-bold mb-3">Continuous Predictive Governance</h3>
+          <p class="text-muted small mb-4">
+            Contracts are not static PDFs archived in a drive. Obligraph continuously compares physical deliveries, 
+            lab test certificates, and price notice timelines against contracted covenants.
+          </p>
+          <div class="d-flex flex-column gap-3">
+            <div class="d-flex align-items-start gap-3">
+              <div class="badge-status-compliant p-2"><i class="bi bi-check-lg"></i></div>
+              <div>
+                <div class="fw-semibold small">Deterministic Execution</div>
+                <div class="text-muted fs-xs">LLM is used solely for initial clause extraction & NL SQL query. All scoring is deterministic Python.</div>
+              </div>
+            </div>
+            <div class="d-flex align-items-start gap-3">
+              <div class="badge-status-atrisk p-2"><i class="bi bi-clock-history"></i></div>
+              <div>
+                <div class="fw-semibold small">Counter-Evidence Windows</div>
+                <div class="text-muted fs-xs">Automatic 48-hour counterparty review window before immutable escalation occurs.</div>
+              </div>
+            </div>
+            <div class="d-flex align-items-start gap-3">
+              <div class="badge-status-violated p-2"><i class="bi bi-shield-lock"></i></div>
+              <div>
+                <div class="fw-semibold small">Cryptographic Chain of Custody</div>
+                <div class="text-muted fs-xs">Tampering with any historical escalation breaks SHA-256 root verification instantly.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-7">
+          <div class="p-3" style="background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: 6px;">
+            <div class="d-flex align-items-center justify-content-between pb-3 mb-3 border-bottom border-subtle">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary font-monospace">CLAUSE 4.2</span>
+                <span class="fw-semibold small">Supplier Quality & Volume Threshold</span>
+              </div>
+              <span class="badge-risk badge-risk-medium"><i class="bi bi-exclamation-triangle"></i> MEDIUM RISK (52.4)</span>
+            </div>
+
+            <!-- Visual Flow Steps -->
+            <div class="row g-2 small">
+              <div class="col-md-6">
+                <div class="p-2 bg-surface border border-subtle mb-2" style="border-radius: 4px;">
+                  <div class="text-muted fs-xs">ORIGINAL CLAUSE</div>
+                  <div class="font-monospace text-truncate">"Supplier shall deliver 5,000 units with purity ≥ 98.5%..."</div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="p-2 bg-surface border border-subtle mb-2" style="border-radius: 4px;">
+                  <div class="text-muted fs-xs">STRUCTURED RECORD</div>
+                  <div class="font-monospace text-truncate">Actor: Supplier | Target: 5000 units | Min: 98.5%</div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="p-2 bg-surface border border-subtle" style="border-radius: 4px;">
+                  <div class="text-muted fs-xs">INCOMING EVIDENCE (SHEET)</div>
+                  <div class="font-monospace text-truncate">Observed: 4,750 units (Purity 97.8%) [Trust: 1.0]</div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="p-2 bg-surface border border-subtle" style="border-radius: 4px;">
+                  <div class="text-muted fs-xs">DISPUTE STATUS</div>
+                  <div class="font-monospace text-warning text-truncate">Open (Counter-evidence review: 31h remaining)</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-3 pt-3 border-top border-subtle d-flex align-items-center justify-content-between">
+              <span class="text-muted fs-xs">Next Scheduled Audit: <strong>In 14 Days</strong></span>
+              <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-primary px-3">
+                Inspect Live in Dashboard <i class="bi bi-arrow-right ms-1"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

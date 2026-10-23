@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Natural Language Query Studio - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+  <!-- Header -->
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div>
+      <div class="d-flex align-items-center gap-2">
+        <h2 class="h4 fw-bold mb-0">Natural Language SQL Studio</h2>
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill font-monospace" style="font-size: 0.75rem;">
+          <i class="bi bi-shield-lock-fill me-1"></i>SANDBOXED READ-ONLY
+        </span>
+      </div>
+      <p class="text-muted small mb-0 mt-1">
+        Query contracts, obligations, evidence, and escalations using plain English. Sandboxed to strictly read-only execution.
+      </p>
+    </div>
+  </div>
+
+  <!-- Query Input Card -->
+  <div class="card-modern p-4">
+    <form id="nlQueryForm" action="{{ url_for('query.index') }}" method="POST">
+      <div class="mb-3">
+        <label class="form-label fw-bold small text-uppercase text-muted">Ask anything about your obligations</label>
+        <div class="input-group input-group-lg shadow-sm">
+          <span class="input-group-text bg-transparent border-end-0 text-primary ps-3">
+            <i class="bi bi-stars fs-5"></i>
+          </span>
+          <input type="text" name="prompt" id="nlQueryInput" class="form-control border-start-0 ps-2" 
+                 placeholder="e.g. What obligations are due this month? or Show high-risk obligations..." 
+                 value="{{ initial_prompt or '' }}" required autofocus>
+          <button class="btn btn-primary px-4 fw-semibold" type="submit" id="btnSubmitQuery">
+            <span id="btnQuerySpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status"></span>
+            <i class="bi bi-arrow-right me-1" id="btnQueryIcon"></i> Run Query
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Prompt Chips -->
+      <div class="d-flex flex-wrap gap-2 align-items-center pt-2">
+        <span class="text-muted fs-xs fw-bold text-uppercase"><i class="bi bi-lightbulb me-1"></i>Quick Queries:</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill font-monospace fs-xs chip-btn" 
+                data-query="What obligations are due this month?">
+          "What obligations are due this month?"
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill font-monospace fs-xs chip-btn" 
+                data-query="Show high-risk obligations for Supplier">
+          "Show high-risk obligations for Supplier"
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill font-monospace fs-xs chip-btn" 
+                data-query="Which deliveries have missing BOL evidence?">
+          "Which deliveries have missing BOL evidence?"
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill font-monospace fs-xs chip-btn" 
+                data-query="List all resolved disputes">
+          "List all resolved disputes"
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill font-monospace fs-xs chip-btn" 
+                data-query="Show cryptographic escalation blocks">
+          "Show escalation ledger blocks"
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Dynamic Results Container -->
+  <div id="queryResultsSection">
+    {% if result %}
+      {% if result.error %}
+        <!-- Security Sandbox or Syntax Error Alert -->
+        <div class="alert alert-danger border-0 shadow-sm rounded-4 p-4 d-flex align-items-start gap-3">
+          <i class="bi bi-shield-x text-danger fs-3"></i>
+          <div>
+            <div class="fw-bold fs-6">Query Execution Blocked</div>
+            <div class="small mt-1">{{ result.error }}</div>
+            {% if result.sql %}
+            <div class="mt-2 font-monospace fs-xs p-2 rounded bg-dark text-danger border border-danger-subtle">
+              {{ result.sql }}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      {% else %}
+        <!-- Success Results Card -->
+        <div class="card-modern">
+          <div class="card-header-modern">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-table text-primary fs-5"></i>
+              <h5 class="mb-0 fw-bold fs-6">Query Results ({{ result.row_count }} rows)</h5>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill font-monospace fs-xs">
+                <i class="bi bi-stopwatch me-1"></i>{{ result.execution_time_ms }} ms
+              </span>
+              <span class="badge bg-secondary-subtle text-muted rounded-pill font-monospace fs-xs">
+                mode=ro
+              </span>
+            </div>
+          </div>
+
+          <!-- Executed SQL Accordion -->
+          <div class="p-3 border-bottom border-subtle" style="background: var(--bg-surface-elevated);">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-muted fs-xs text-uppercase fw-bold"><i class="bi bi-code-slash me-1"></i>Generated SQL Query</span>
+              <button class="btn btn-sm btn-link p-0 text-muted fs-xs" onclick="navigator.clipboard.writeText(document.getElementById('executedSqlText').innerText); alert('SQL copied to clipboard!');">
+                <i class="bi bi-clipboard me-1"></i>Copy SQL
+              </button>
+            </div>
+            <pre id="executedSqlText" class="font-monospace text-primary fs-xs p-2 rounded mb-0" style="background: var(--bg-surface); overflow-x: auto; white-space: pre-wrap; word-break: break-all;">{{ result.sql }}</pre>
+          </div>
+
+          <!-- Table Content -->
+          <div class="card-body-modern p-0">
+            {% if result.rows %}
+            <div class="table-responsive">
+              <table class="table-modern">
+                <thead>
+                  <tr>
+                    {% for col in result.columns %}
+                    <th class="font-monospace text-uppercase fs-xs text-nowrap">{{ col }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in result.rows %}
+                  <tr>
+                    {% for val in row %}
+                    <td class="small {% if loop.first %}fw-semibold font-monospace text-muted{% endif %}">
+                      {% if val is none %}
+                        <span class="text-muted font-monospace fs-xs">NULL</span>
+                      {% elif result.columns[loop.index0] == 'status' %}
+                        <span class="badge-status {{ val | status_badge }}">{{ val }}</span>
+                      {% elif result.columns[loop.index0] == 'risk_label' %}
+                        <span class="badge-risk {{ val | risk_badge }}">{{ val }}</span>
+                      {% elif result.columns[loop.index0] == 'risk_score' and val is number %}
+                        <span class="fw-bold font-monospace">{{ val | round(1) }}</span>
+                      {% elif val is string and val | length > 60 %}
+                        <div style="max-width: 420px; line-height: 1.45;">{{ val }}</div>
+                      {% else %}
+                        {{ val }}
+                      {% endif %}
+                    </td>
+                    {% endfor %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center text-muted">
+              <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+              <div class="fw-bold">No Matching Records</div>
+              <div class="small">The query executed successfully but returned 0 rows.</div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    {% else %}
+      <!-- Initial Ready State -->
+      <div class="card-modern p-5 text-center">
+        <div class="stat-icon bg-primary-subtle text-primary fs-2 mx-auto mb-3">
+          <i class="bi bi-stars"></i>
+        </div>
+        <div class="h5 fw-bold mb-1">Interactive Natural Language Query Studio</div>
+        <p class="text-muted small mx-auto mb-3" style="max-width: 500px;">
+          Ask any question about contractual terms, counter-evidence submissions, high-risk suppliers, or tamper-evident blockchain escalations.
+        </p>
+        <div class="d-flex justify-content-center gap-2">
+          <span class="badge bg-secondary-subtle text-muted rounded-pill font-monospace fs-xs">Strict SELECT Only</span>
+          <span class="badge bg-secondary-subtle text-muted rounded-pill font-monospace fs-xs">Read-Only Sandbox</span>
+          <span class="badge bg-secondary-subtle text-muted rounded-pill font-monospace fs-xs">SQLite mode=ro</span>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const queryInput = document.getElementById("nlQueryInput");
+  const chipButtons = document.querySelectorAll(".chip-btn");
+  const form = document.getElementById("nlQueryForm");
+  const btnSpinner = document.getElementById("btnQuerySpinner");
+  const btnIcon = document.getElementById("btnQueryIcon");
+
+  chipButtons.forEach(btn => {
+    btn.addEventListener("click", function() {
+      const q = this.getAttribute("data-query");
+      queryInput.value = q;
+      queryInput.focus();
+      // Auto submit
+      form.dispatchEvent(new Event("submit", { cancelable: true }));
+      form.submit();
+    });
+  });
+
+  form.addEventListener("submit", function() {
+    if (btnSpinner && btnIcon) {
+      btnSpinner.classList.remove("d-none");
+      btnIcon.classList.add("d-none");
+    }
+  });
+});
+</script>
+{% endblock %}

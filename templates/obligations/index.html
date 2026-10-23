@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+
+{% block title %}Obligations Ledger - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+  <!-- Page Header -->
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div>
+      <div class="d-flex align-items-center gap-2">
+        <h2 class="h4 fw-bold mb-0">Obligations Registry & Status Matrix</h2>
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill font-monospace" style="font-size: 0.75rem;">
+          {{ stats.total }} RECORDS
+        </span>
+      </div>
+      <p class="text-muted small mb-0 mt-1">
+        Canonical six-field records with predictive risk calculations, trust weights, and compliance gauges.
+      </p>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <a href="{{ url_for('obligations.graph') }}" class="btn btn-outline-warning rounded-pill px-3 shadow-sm btn-sm d-inline-flex align-items-center gap-1">
+        <i class="bi bi-bezier2"></i>
+        <span>Topology Graph</span>
+      </a>
+      <a href="{{ url_for('contracts.upload') }}" class="btn btn-primary rounded-pill px-3 shadow-sm btn-sm d-inline-flex align-items-center gap-1">
+        <i class="bi bi-cloud-arrow-up"></i>
+        <span>Ingest Agreement</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Mini KPI Metrics Bar -->
+  <div class="row g-3">
+    <div class="col-6 col-md-3">
+      <div class="p-3 rounded-4 card-modern d-flex align-items-center justify-content-between">
+        <div>
+          <div class="text-muted fs-xs text-uppercase fw-bold">Total Ingested</div>
+          <div class="h4 fw-bold mb-0 text-primary">{{ stats.total }}</div>
+        </div>
+        <div class="stat-icon bg-primary-subtle text-primary"><i class="bi bi-journal-text"></i></div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="p-3 rounded-4 card-modern d-flex align-items-center justify-content-between">
+        <div>
+          <div class="text-muted fs-xs text-uppercase fw-bold">Compliant</div>
+          <div class="h4 fw-bold mb-0 text-success">{{ stats.compliant }}</div>
+        </div>
+        <div class="stat-icon bg-success-subtle text-success"><i class="bi bi-shield-check"></i></div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="p-3 rounded-4 card-modern d-flex align-items-center justify-content-between">
+        <div>
+          <div class="text-muted fs-xs text-uppercase fw-bold">At Risk</div>
+          <div class="h4 fw-bold mb-0 text-warning">{{ stats.at_risk }}</div>
+        </div>
+        <div class="stat-icon bg-warning-subtle text-warning"><i class="bi bi-exclamation-triangle"></i></div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="p-3 rounded-4 card-modern d-flex align-items-center justify-content-between">
+        <div>
+          <div class="text-muted fs-xs text-uppercase fw-bold">Violated / Breached</div>
+          <div class="h4 fw-bold mb-0 text-danger">{{ stats.violated }}</div>
+        </div>
+        <div class="stat-icon bg-danger-subtle text-danger"><i class="bi bi-x-octagon"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search & Filter Controls -->
+  <div class="card-modern p-3">
+    <form method="GET" action="{{ url_for('obligations.index') }}" class="row g-2 align-items-center" id="filterForm">
+      <!-- Search Input -->
+      <div class="col-md-4">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-transparent border-subtle"><i class="bi bi-search text-muted"></i></span>
+          <input type="text" name="search" id="liveSearchInput" class="form-control border-subtle" placeholder="Search clause text, actor, evidence..." value="{{ selected_search }}">
+          {% if selected_search %}
+          <a href="{{ url_for('obligations.index') }}" class="input-group-text bg-transparent border-subtle text-muted text-decoration-none" title="Clear Search">
+            <i class="bi bi-x"></i>
+          </a>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Actor Filter -->
+      <div class="col-6 col-md-2">
+        <select name="actor" class="form-select form-select-sm border-subtle" onchange="document.getElementById('filterForm').submit()">
+          <option value="">All Actors</option>
+          {% for a in actors %}
+          <option value="{{ a }}" {% if selected_actor == a %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Status Filter -->
+      <div class="col-6 col-md-2">
+        <select name="status" class="form-select form-select-sm border-subtle" onchange="document.getElementById('filterForm').submit()">
+          <option value="">All Statuses</option>
+          <option value="COMPLIANT" {% if selected_status == 'COMPLIANT' %}selected{% endif %}>COMPLIANT</option>
+          <option value="AT_RISK" {% if selected_status == 'AT_RISK' %}selected{% endif %}>AT_RISK</option>
+          <option value="VIOLATED" {% if selected_status == 'VIOLATED' %}selected{% endif %}>VIOLATED</option>
+          <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>PENDING</option>
+        </select>
+      </div>
+
+      <!-- Risk Level Filter -->
+      <div class="col-6 col-md-2">
+        <select name="risk" class="form-select form-select-sm border-subtle" onchange="document.getElementById('filterForm').submit()">
+          <option value="">All Risk Levels</option>
+          <option value="LOW" {% if selected_risk == 'LOW' %}selected{% endif %}>LOW Risk (&lt;35)</option>
+          <option value="MEDIUM" {% if selected_risk == 'MEDIUM' %}selected{% endif %}>MEDIUM Risk (35-69)</option>
+          <option value="HIGH" {% if selected_risk == 'HIGH' %}selected{% endif %}>HIGH Risk (≥70)</option>
+        </select>
+      </div>
+
+      <!-- Sort Order -->
+      <div class="col-6 col-md-2">
+        <select name="sort" class="form-select form-select-sm border-subtle" onchange="document.getElementById('filterForm').submit()">
+          <option value="id_asc" {% if selected_sort == 'id_asc' %}selected{% endif %}>Sort: ID Ascending</option>
+          <option value="id_desc" {% if selected_sort == 'id_desc' %}selected{% endif %}>Sort: ID Descending</option>
+          <option value="risk_desc" {% if selected_sort == 'risk_desc' %}selected{% endif %}>Highest Risk First</option>
+          <option value="risk_asc" {% if selected_sort == 'risk_asc' %}selected{% endif %}>Lowest Risk First</option>
+          <option value="confidence_desc" {% if selected_sort == 'confidence_desc' %}selected{% endif %}>Highest Confidence</option>
+          <option value="deadline_asc" {% if selected_sort == 'deadline_asc' %}selected{% endif %}>Upcoming Deadline</option>
+        </select>
+      </div>
+    </form>
+  </div>
+
+  <!-- Obligations Table -->
+  <div class="card-modern">
+    <div class="card-body-modern p-0">
+      {% if obligations %}
+      <div class="table-responsive">
+        <table class="table-modern" id="obligationsTable">
+          <thead>
+            <tr>
+              <th style="width: 50px;">ID</th>
+              <th style="min-width: 220px;">Clause &amp; Expected State</th>
+              <th style="width: 85px;">Actor</th>
+              <th style="width: 115px;">Trigger</th>
+              <th style="width: 95px;">Target</th>
+              <th style="width: 110px;">Confidence</th>
+              <th style="width: 95px;">Risk</th>
+              <th style="width: 90px;">Status</th>
+              <th class="text-end text-nowrap pe-3" style="width: 145px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for o in obligations %}
+            <tr class="row-risk-{{ o.risk_label | lower }} obligation-row" data-text="{{ o.clause_text | lower }} {{ o.actor | lower }} {{ o.expected_state | lower }} {{ o.required_evidence | lower }}">
+              <td class="font-monospace text-muted small">#{{ o.id }}</td>
+              <td>
+                <a href="{{ url_for('obligations.detail', obligation_id=o.id) }}" class="text-decoration-none text-reset">
+                  <div class="fw-semibold text-truncate" style="max-width: 220px;" title="{{ o.clause_text }}">
+                    {{ o.clause_text }}
+                  </div>
+                  <div class="text-muted small text-truncate" style="max-width: 220px;">
+                    <i class="bi bi-bullseye me-1 text-primary"></i>{{ o.expected_state }}
+                  </div>
+                </a>
+              </td>
+              <td>
+                <span class="badge bg-secondary-subtle text-secondary font-monospace">{{ o.actor }}</span>
+              </td>
+              <td class="small">
+                <div>{{ o.deadline_date or 'On Demand' }}</div>
+                <div class="text-muted fs-xs text-truncate" style="max-width: 110px;">{{ o.trigger_deadline }}</div>
+              </td>
+              <td class="font-monospace small">
+                {% if o.target_value is not none %}
+                  <span class="fw-bold">{{ o.target_value }}</span> <span class="text-muted">{{ o.unit }}</span>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="progress flex-grow-1" style="height: 6px; width: 45px;">
+                    <div class="progress-bar {% if o.confidence >= 70 %}bg-success{% elif o.confidence >= 35 %}bg-warning{% else %}bg-secondary{% endif %}" 
+                         role="progressbar" style="width: {{ o.confidence }}%;"></div>
+                  </div>
+                  <span class="small font-monospace">{{ o.confidence | round }}%</span>
+                </div>
+              </td>
+              <td>
+                <span class="badge-risk {{ o.risk_label | risk_badge }}">
+                  {{ o.risk_label }} ({{ o.risk_score | round(1) }})
+                </span>
+              </td>
+              <td>
+                <span class="badge-status {{ o.status | status_badge }}">{{ o.status }}</span>
+              </td>
+              <td class="text-end text-nowrap pe-3">
+                <div class="d-inline-flex align-items-center justify-content-end gap-1">
+                  <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2 fs-xs d-inline-flex align-items-center gap-1" onclick="openExplainScoreDrawer({{ o.id }})" title="Explain this score">
+                    <i class="bi bi-calculator"></i>
+                    <span>Explain</span>
+                  </button>
+                  <a href="{{ url_for('obligations.detail', obligation_id=o.id) }}" class="btn btn-sm btn-outline-primary rounded-pill px-2 fs-xs" title="Inspect obligation details">
+                    <span>Inspect</span> <i class="bi bi-chevron-right ms-1"></i>
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        {% set icon = 'bi-funnel' %}
+        {% set title = 'No Matching Obligations' %}
+        {% set description = 'No obligations match your current search and filter criteria. Try resetting filters or upload an agreement.' %}
+        {% set action_url = url_for('obligations.index') %}
+        {% set action_label = 'Reset Filters' %}
+        {% include 'components/empty_state.html' %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Explain Score Offcanvas Drawer -->
+<div class="offcanvas offcanvas-end card-modern border-start border-subtle shadow-lg" tabindex="-1" id="explainScoreDrawer" aria-labelledby="explainScoreLabel" style="width: 480px; background: var(--bg-surface);">
+  <div class="offcanvas-header border-bottom border-subtle">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-calculator-fill text-info fs-5"></i>
+      <h5 class="offcanvas-title fw-bold fs-6" id="explainScoreLabel">Risk Score Breakdown</h5>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  </div>
+  <div class="offcanvas-body p-4 d-flex flex-column gap-3" id="drawerBody">
+    <div class="text-center py-5">
+      <div class="spinner-border text-info" role="status"></div>
+      <div class="text-muted small mt-2">Computing score decomposition...</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Real-time client side fast search filter
+  const searchInput = document.getElementById('liveSearchInput');
+  const rows = document.querySelectorAll('.obligation-row');
+
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      rows.forEach(row => {
+        const text = row.getAttribute('data-text') || '';
+        if (text.includes(q)) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    });
+  }
+
+  // Explain Score Drawer
+  let drawerInstance = null;
+  function openExplainScoreDrawer(obId) {
+    const el = document.getElementById('explainScoreDrawer');
+    if (!drawerInstance) {
+      drawerInstance = new bootstrap.Offcanvas(el);
+    }
+    drawerInstance.show();
+
+    const body = document.getElementById('drawerBody');
+    body.innerHTML = `
+      <div class="text-center py-5">
+        <div class="spinner-border text-info" role="status"></div>
+        <div class="text-muted small mt-2">Computing score decomposition for Obligation #${obId}...</div>
+      </div>
+    `;
+
+    fetch(`/obligations/api/explain/${obId}`)
+      .then(res => res.json())
+      .then(data => {
+        renderDrawerContent(data);
+      })
+      .catch(err => {
+        body.innerHTML = `<div class="alert alert-danger">Error loading score breakdown: ${err}</div>`;
+      });
+  }
+
+  function renderDrawerContent(d) {
+    const b = d.breakdown;
+    const body = document.getElementById('drawerBody');
+    
+    const riskBadgeClass = d.risk_label === 'HIGH' ? 'badge-risk-high' :
+                           d.risk_label === 'MEDIUM' ? 'badge-risk-medium' : 'badge-risk-low';
+
+    body.innerHTML = `
+      <div class="p-3 rounded-3 bg-surface-elevated border border-subtle">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="badge bg-primary font-monospace">OBLIGATION #${d.obligation_id}</span>
+          <span class="badge-risk ${riskBadgeClass}">${d.risk_label} RISK (${d.total_risk_score}/100)</span>
+        </div>
+        <div class="fw-semibold small">${d.clause_text}</div>
+        <div class="text-muted fs-xs mt-1"><i class="bi bi-person me-1"></i>Actor: <strong>${d.actor}</strong></div>
+      </div>
+
+      <!-- Core Formula Card -->
+      <div class="p-3 rounded-3 border border-info-subtle" style="background: rgba(59, 130, 246, 0.05);">
+        <div class="text-muted fs-xs text-uppercase fw-bold mb-1">Deterministic Risk Formula</div>
+        <div class="font-monospace small text-primary fw-bold" style="line-height: 1.5;">
+          ${b.formula_string}
+        </div>
+      </div>
+
+      <!-- 3 Contributions -->
+      <div class="d-flex flex-column gap-3">
+        <!-- 1. Deviation -->
+        <div class="p-3 rounded-3 bg-surface border border-subtle">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="small fw-bold text-danger">1. Target Deviation (${b.w1_weight_pct}% weight)</span>
+            <span class="badge bg-danger-subtle text-danger font-monospace">+${b.w1_contribution} pts</span>
+          </div>
+          <div class="text-muted fs-xs mb-2">Normalized variance between observed metric and contract requirement.</div>
+          <div class="progress" style="height: 6px;">
+            <div class="progress-bar bg-danger" style="width: ${b.w1_deviation_score}%;"></div>
+          </div>
+          <div class="d-flex justify-content-between fs-xs text-muted mt-1">
+            <span>Deviation Score: ${b.w1_deviation_score}/100</span>
+            <span>Target: ${d.target_value || '-'} ${d.unit || ''}</span>
+          </div>
+        </div>
+
+        <!-- 2. Trust Deficit -->
+        <div class="p-3 rounded-3 bg-surface border border-subtle">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="small fw-bold text-warning">2. Evidence Trust Deficit (${b.w2_weight_pct}% weight)</span>
+            <span class="badge bg-warning-subtle text-warning font-monospace">+${b.w2_contribution} pts</span>
+          </div>
+          <div class="text-muted fs-xs mb-2">Penalty for unconfirmed, self-reported or missing multi-source evidence.</div>
+          <div class="progress" style="height: 6px;">
+            <div class="progress-bar bg-warning" style="width: ${b.w2_trust_deficit_score}%;"></div>
+          </div>
+          <div class="d-flex justify-content-between fs-xs text-muted mt-1">
+            <span>Trust Deficit Score: ${b.w2_trust_deficit_score}/100</span>
+            <span>Correlated Items: ${d.evidence_count}</span>
+          </div>
+        </div>
+
+        <!-- 3. Deadline Proximity -->
+        <div class="p-3 rounded-3 bg-surface border border-subtle">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="small fw-bold text-info">3. Deadline Proximity (${b.w3_weight_pct}% weight)</span>
+            <span class="badge bg-info-subtle text-info font-monospace">+${b.w3_contribution} pts</span>
+          </div>
+          <div class="text-muted fs-xs mb-2">Decay curve rising exponentially as days to deadline approach zero.</div>
+          <div class="progress" style="height: 6px;">
+            <div class="progress-bar bg-info" style="width: ${b.w3_proximity_score}%;"></div>
+          </div>
+          <div class="d-flex justify-content-between fs-xs text-muted mt-1">
+            <span>Proximity Score: ${b.w3_proximity_score}/100</span>
+            <span>${d.days_left !== null ? d.days_left + ' days left' : 'Conditional'}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dispute Window Callout (if active) -->
+      ${d.dispute_deadline ? `
+      <div class="p-3 rounded-3 border border-warning" style="background: rgba(245, 158, 11, 0.1);">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi bi-clock-history text-warning fs-5"></i>
+          <span class="fw-bold small text-warning">Dispute Window Active</span>
+        </div>
+        <div class="small">Countdown: <strong>${d.dispute_hours_remaining !== null ? d.dispute_hours_remaining + ' hours remaining' : 'In review'}</strong></div>
+        <div class="text-muted fs-xs mt-1">Counter-evidence may be submitted before immutable escalation log occurs.</div>
+      </div>
+      ` : ''}
+
+      <!-- Drawer Actions -->
+      <div class="pt-3 border-top border-subtle d-flex gap-2">
+        <a href="/obligations/${d.obligation_id}" class="btn btn-primary rounded-pill btn-sm flex-grow-1">
+          Inspect Obligation Detail <i class="bi bi-arrow-right ms-1"></i>
+        </a>
+        <a href="/disputes/" class="btn btn-outline-warning rounded-pill btn-sm">
+          Dispute Center
+        </a>
+      </div>
+    `;
+  }
+</script>
+{% endblock %}

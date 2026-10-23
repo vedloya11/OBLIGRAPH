@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}OBLIGRAPH - Autonomous Contract-to-Execution Obligation Graph Engine{% endblock %}</title>
+  <meta name="description" content="Predictive compliance monitoring platform converting signed agreements into autonomous, trackable obligation graphs.">
+  
+  <!-- Favicon icon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='25' fill='%233b82f6'/><path d='M30 50 L45 65 L70 35' stroke='white' stroke-width='10' fill='none' stroke-linecap='round'/></svg>">
+
+  <!-- Bootstrap 5 CSS & Icons CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+  <!-- Custom Design System CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css', v='2.1') }}">
+  
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- Mobile Backdrop -->
+    <div id="sidebarBackdrop" class="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-50 d-none" style="z-index: 1015;"></div>
+
+    <!-- Fixed Modern Sidebar -->
+    <aside class="app-sidebar">
+      <div class="sidebar-header">
+        <a href="{{ url_for('main.landing') }}" class="brand-link">
+          <div class="brand-icon-box">
+            <i class="bi bi-diagram-3-fill"></i>
+          </div>
+          <span>OBLIGRAPH</span>
+          <span class="brand-badge">v1.0</span>
+        </a>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">Core Engine</div>
+        <a href="{{ url_for('main.dashboard') }}" class="nav-link-modern {% if request.endpoint == 'main.dashboard' %}active{% endif %}">
+          <i class="bi bi-speedometer2"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="{{ url_for('contracts.index') }}" class="nav-link-modern {% if request.endpoint and 'contracts' in request.endpoint %}active{% endif %}">
+          <i class="bi bi-file-earmark-text"></i>
+          <span>Contracts</span>
+        </a>
+        <a href="{{ url_for('obligations.index') }}" class="nav-link-modern {% if request.endpoint in ['obligations.index', 'obligations.detail'] %}active{% endif %}">
+          <i class="bi bi-check2-circle"></i>
+          <span>Obligations</span>
+        </a>
+        <a href="{{ url_for('obligations.graph') }}" class="nav-link-modern {% if request.endpoint == 'obligations.graph' %}active{% endif %}">
+          <i class="bi bi-bezier2"></i>
+          <span>Dependency Graph</span>
+        </a>
+
+        <div class="nav-section-title mt-3">Execution & Proof</div>
+        <a href="{{ url_for('evidence.index') }}" class="nav-link-modern {% if request.endpoint and 'evidence' in request.endpoint %}active{% endif %}">
+          <i class="bi bi-shield-check"></i>
+          <span>Evidence Feeds</span>
+        </a>
+        <a href="{{ url_for('disputes.index') }}" class="nav-link-modern {% if request.endpoint and 'disputes' in request.endpoint %}active{% endif %}">
+          <i class="bi bi-arrow-left-right"></i>
+          <span>Disputes</span>
+          {% if open_dispute_count > 0 %}
+          <span class="badge bg-warning text-dark ms-auto font-monospace">{{ open_dispute_count }}</span>
+          {% endif %}
+        </a>
+        <a href="{{ url_for('escalations.index') }}" class="nav-link-modern {% if request.endpoint and 'escalations' in request.endpoint %}active{% endif %}">
+          <i class="bi bi-link-45deg"></i>
+          <span>Hash-Chain Log</span>
+          {% if escalation_count > 0 %}
+          <span class="badge bg-danger ms-auto font-monospace">{{ escalation_count }}</span>
+          {% endif %}
+        </a>
+
+        <div class="nav-section-title mt-3">Analytics & Admin</div>
+        <a href="{{ url_for('query.index') }}" class="nav-link-modern {% if request.endpoint and 'query' in request.endpoint %}active{% endif %}">
+          <i class="bi bi-terminal"></i>
+          <span>NL Query Studio</span>
+        </a>
+        <a href="{{ url_for('settings.index') }}" class="nav-link-modern {% if request.endpoint and 'settings' in request.endpoint %}active{% endif %}">
+          <i class="bi bi-sliders2"></i>
+          <span>Engine Settings</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="d-flex align-items-center justify-content-between p-2 rounded" style="background: var(--bg-surface-elevated);">
+          <div class="d-flex align-items-center gap-2">
+            <div class="contract-pulse"></div>
+            <div class="small fw-semibold text-truncate" style="max-width: 140px;">Engine Live</div>
+          </div>
+          <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 0.68rem;">Deterministic</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main App Container -->
+    <main class="app-main">
+      <!-- Topbar Header -->
+      <header class="app-topbar">
+        <div class="topbar-left">
+          <!-- Mobile Sidebar Toggle -->
+          <button id="sidebarToggle" class="btn-icon d-lg-none" aria-label="Toggle navigation">
+            <i class="bi bi-list fs-5"></i>
+          </button>
+
+          <!-- Active Contract Switcher Dropdown -->
+          <div class="dropdown">
+            <button class="active-contract-badge dropdown-toggle btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <span class="contract-pulse"></span>
+              <span class="text-muted d-none d-sm-inline">Contract:</span>
+              <strong class="text-truncate" style="max-width: 220px;">
+                {{ active_contract.title if active_contract else 'No Contract Active' }}
+              </strong>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-0 py-2">
+              <li class="dropdown-header text-uppercase fs-xs">Switch Active Contract</li>
+              {% if all_contracts %}
+                {% for c in all_contracts %}
+                <li>
+                  <a class="dropdown-item d-flex align-items-center justify-content-between gap-3 {% if active_contract and active_contract.id == c.id %}active{% endif %}" 
+                     href="{{ url_for('main.switch_contract', contract_id=c.id) }}">
+                    <span class="text-truncate">{{ c.title }}</span>
+                    {% if active_contract and active_contract.id == c.id %}
+                    <i class="bi bi-check2 text-primary"></i>
+                    {% endif %}
+                  </a>
+                </li>
+                {% endfor %}
+              {% else %}
+                <li><span class="dropdown-item-text text-muted small">No contracts ingested yet</span></li>
+              {% endif %}
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <a class="dropdown-item text-primary small" href="{{ url_for('contracts.upload') }}">
+                  <i class="bi bi-cloud-arrow-up me-1"></i> Ingest New Contract
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Center Floating Fast Search Bar -->
+        <div class="topbar-center d-none d-md-flex align-items-center">
+          <button type="button" class="header-search-box btn text-start d-flex align-items-center gap-2 px-3 py-1 rounded-pill" data-bs-toggle="modal" data-bs-target="#globalSearchModal" style="background: var(--bg-surface-elevated); border: 1px solid var(--border-color); color: var(--text-muted); font-size: 0.825rem; min-width: 290px;">
+            <i class="bi bi-search text-primary"></i>
+            <span class="text-truncate">Search obligations, contracts, hash chain...</span>
+            <span class="kbd-badge ms-auto">/</span>
+          </button>
+        </div>
+
+        <div class="topbar-right">
+          <!-- Keyboard Shortcuts Trigger -->
+          <button class="btn-icon" data-bs-toggle="modal" data-bs-target="#shortcutsModal" title="Keyboard Shortcuts (?)" aria-label="Keyboard Shortcuts">
+            <i class="bi bi-keyboard"></i>
+          </button>
+
+          <!-- Notification Bell -->
+          <button class="btn-icon" data-bs-toggle="modal" data-bs-target="#notificationsModal" title="Escalations and Alerts">
+            <i class="bi bi-bell"></i>
+            {% if notification_count > 0 %}
+            <span class="notification-badge">{{ notification_count }}</span>
+            {% endif %}
+          </button>
+
+          <!-- Dark / Light Theme Toggle -->
+          <button id="themeToggleBtn" class="btn-icon" title="Toggle Theme" aria-label="Toggle dark/light theme">
+            <i id="themeIcon" class="bi bi-moon-stars-fill text-warning"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Page Content Block -->
+      <div class="page-container">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <!-- Notification Bell Modal -->
+  <div class="modal fade" id="notificationsModal" tabindex="-1" aria-labelledby="notificationsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content card-modern border-0">
+        <div class="modal-header border-bottom border-subtle">
+          <h5 class="modal-title fs-6 fw-bold" id="notificationsModalLabel">
+            <i class="bi bi-bell-fill text-warning me-2"></i>Active Alerts & Notifications
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="d-flex align-items-center justify-content-between p-3 rounded mb-3" style="background: var(--bg-surface-elevated);">
+            <div>
+              <div class="fw-semibold">Tamper-Evident Escalations</div>
+              <div class="text-muted small">Immutable violation records logged to hash chain</div>
+            </div>
+            <span class="badge bg-danger fs-6">{{ escalation_count }}</span>
+          </div>
+          <div class="d-flex align-items-center justify-content-between p-3 rounded mb-3" style="background: var(--bg-surface-elevated);">
+            <div>
+              <div class="fw-semibold">Open Counter-Evidence Disputes</div>
+              <div class="text-muted small">Awaiting recomputation or dispute window expiry</div>
+            </div>
+            <span class="badge bg-warning text-dark fs-6">{{ open_dispute_count }}</span>
+          </div>
+          <div class="text-center pt-2">
+            <a href="{{ url_for('escalations.index') }}" class="btn btn-outline-primary btn-sm rounded-pill px-3 me-2">
+              View Hash Chain
+            </a>
+            <a href="{{ url_for('disputes.index') }}" class="btn btn-outline-warning btn-sm rounded-pill px-3">
+              View Disputes
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Fast Search Modal -->
+  <div class="modal fade" id="globalSearchModal" tabindex="-1" aria-labelledby="globalSearchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content card-modern border-0 shadow-lg">
+        <div class="modal-body p-4">
+          <div class="input-group input-group-lg mb-3">
+            <span class="input-group-text bg-transparent border-end-0 text-primary">
+              <i class="bi bi-search"></i>
+            </span>
+            <input type="text" id="globalSearchInput" class="form-control bg-transparent border-start-0 ps-0" placeholder="Search obligations, clauses, actors, ledger blocks, agreements..." autocomplete="off">
+            <span class="input-group-text bg-transparent text-muted fs-xs font-monospace">ESC</span>
+          </div>
+          
+          <div id="globalSearchResults" class="search-results-list">
+            <div class="text-center py-4 text-muted small">
+              <i class="bi bi-stars text-primary fs-4 d-block mb-1"></i>
+              <span>Type at least 2 characters to search across the entire OBLIGRAPH graph.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Cheatsheet Modal -->
+  <div class="modal fade" id="shortcutsModal" tabindex="-1" aria-labelledby="shortcutsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content card-modern border-0 shadow-lg">
+        <div class="modal-header border-bottom border-subtle">
+          <h5 class="modal-title fs-6 fw-bold" id="shortcutsModalLabel">
+            <i class="bi bi-keyboard text-primary me-2"></i>Keyboard Shortcuts
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="text-muted fs-xs text-uppercase fw-bold mb-2">Navigation Shortcuts</div>
+          <div class="d-flex flex-column gap-2 mb-4">
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Go to Dashboard</span>
+              <div><span class="kbd-badge me-1">G</span><span class="kbd-badge">D</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Go to Contracts</span>
+              <div><span class="kbd-badge me-1">G</span><span class="kbd-badge">C</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Go to Obligations</span>
+              <div><span class="kbd-badge me-1">G</span><span class="kbd-badge">O</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Go to Dependency Graph</span>
+              <div><span class="kbd-badge me-1">G</span><span class="kbd-badge">G</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Go to Evidence Feeds</span>
+              <div><span class="kbd-badge me-1">G</span><span class="kbd-badge">E</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Go to Disputes</span>
+              <div><span class="kbd-badge me-1">G</span><span class="kbd-badge">S</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Go to Escalation Ledger</span>
+              <div><span class="kbd-badge me-1">G</span><span class="kbd-badge">L</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Go to NL Query Studio</span>
+              <div><span class="kbd-badge me-1">G</span><span class="kbd-badge">Q</span></div>
+            </div>
+          </div>
+
+          <div class="text-muted fs-xs text-uppercase fw-bold mb-2">Action Shortcuts</div>
+          <div class="d-flex flex-column gap-2">
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Open Global Fast Search</span>
+              <span class="kbd-badge">/</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Export Executive Compliance Report</span>
+              <div><span class="kbd-badge me-1">E</span><span class="kbd-badge">R</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Show Shortcuts Modal</span>
+              <span class="kbd-badge">?</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background: var(--bg-surface-elevated);">
+              <span class="small">Dismiss Modal</span>
+              <span class="kbd-badge">ESC</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  {% include "components/toasts.html" %}
+
+  <!-- Bootstrap 5 JS Bundle & Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+  <!-- Global Custom JS -->
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  
+  {% block scripts %}{% endblock %}
+</body>
+</html>

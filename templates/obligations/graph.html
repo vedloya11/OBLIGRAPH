@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}Contract Dependency Graph - OBLIGRAPH{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/dist/vis-network.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/dist/dist/vis-network.min.css" rel="stylesheet" />
+<style>
+  #dependencyNetwork {
+    height: 640px;
+    width: 100%;
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-lg);
+    outline: none;
+  }
+  .graph-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-3">
+  <!-- Header & Toolbar -->
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div>
+      <div class="d-flex align-items-center gap-2">
+        <h2 class="h4 fw-bold mb-0">Autonomous Obligation Topology Graph</h2>
+        <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill font-monospace" style="font-size: 0.75rem;">
+          STAGE 03
+        </span>
+      </div>
+      <p class="text-muted small mb-0 mt-1">
+        Interactive upstream-to-downstream dependency graph. Upstream breaches propagate ripple risk to downstream commitments.
+      </p>
+    </div>
+
+    <!-- Actions & Modals -->
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <!-- Contract Selector -->
+      {% if contracts %}
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle rounded-pill" type="button" data-bs-toggle="dropdown">
+          <i class="bi bi-file-earmark-text me-1"></i> Switch Contract
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+          {% for c in contracts %}
+          <li>
+            <a class="dropdown-item small {% if active_contract_id == c.id %}active{% endif %}" href="{{ url_for('obligations.graph', contract_id=c.id) }}">
+              {{ c.title }}
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <!-- Add Dependency Button -->
+      <button class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#addLinkModal">
+        <i class="bi bi-plus-lg"></i>
+        <span>Add Dependency Link</span>
+      </button>
+
+      <!-- Fit Graph Button -->
+      <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="fitNetwork()" title="Fit all nodes to view">
+        <i class="bi bi-arrows-fullscreen"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Legend & Instructions Row -->
+  <div class="card-modern p-3">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+      <div class="d-flex flex-wrap align-items-center gap-3">
+        <span class="text-muted fs-xs text-uppercase fw-bold">Node Risk Colors:</span>
+        <span class="graph-legend-item text-success">
+          <span class="legend-dot bg-success"></span> LOW (&lt;35)
+        </span>
+        <span class="graph-legend-item text-warning">
+          <span class="legend-dot bg-warning"></span> MEDIUM (35-69)
+        </span>
+        <span class="graph-legend-item text-danger">
+          <span class="legend-dot bg-danger"></span> HIGH (≥70)
+        </span>
+      </div>
+      <div class="d-flex align-items-center gap-2 text-muted fs-xs">
+        <i class="bi bi-arrow-right text-primary"></i> Directed Arrow: Upstream Prerequisite &rarr; Downstream Dependent
+      </div>
+    </div>
+  </div>
+
+  <!-- Graph Canvas Container -->
+  <div class="card-modern position-relative overflow-hidden">
+    <div id="dependencyNetwork"></div>
+
+    <!-- Node Inspector Floating Panel (Hidden by default, shown on node click) -->
+    <div id="nodeInspectorPanel" class="position-absolute bottom-0 end-0 m-3 p-3 rounded-4 shadow-lg card-modern border border-primary-subtle d-none" style="max-width: 360px; z-index: 10; background: var(--bg-surface-elevated);">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="badge bg-primary font-monospace" id="inspectorIdBadge">#ID</span>
+        <button type="button" class="btn-close btn-sm" onclick="closeInspector()"></button>
+      </div>
+      <div class="fw-bold small mb-1" id="inspectorClauseText">Clause Title</div>
+      <div class="text-muted fs-xs mb-2" id="inspectorActor">Actor</div>
+      <div class="d-flex justify-content-between align-items-center pt-2 border-top border-subtle">
+        <span class="badge-risk" id="inspectorRiskBadge">LOW</span>
+        <a href="#" id="inspectorDetailBtn" class="btn btn-primary btn-sm rounded-pill px-3 fs-xs">
+          Inspect Obligation <i class="bi bi-arrow-right ms-1"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Dependency Link -->
+<div class="modal fade" id="addLinkModal" tabindex="-1" aria-labelledby="addLinkModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content card-modern border-0">
+      <div class="modal-header border-bottom border-subtle">
+        <h5 class="modal-title fs-6 fw-bold" id="addLinkModalLabel">
+          <i class="bi bi-link-45deg text-primary me-2"></i>Create Dependency Link
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('obligations.add_dependency') }}" method="POST">
+        <div class="modal-body p-4 d-flex flex-column gap-3">
+          <div>
+            <label class="form-label small fw-bold">Upstream Obligation (Prerequisite)</label>
+            <select name="upstream_id" class="form-select" required>
+              <option value="">Select upstream prerequisite...</option>
+              {% for o in all_obligations %}
+              <option value="{{ o.id }}">#{{ o.id }} ({{ o.actor }}) - {{ o.clause_text[:45] }}...</option>
+              {% endfor %}
+            </select>
+            <div class="form-text fs-xs">This obligation must be fulfilled first.</div>
+          </div>
+
+          <div class="text-center my-1">
+            <i class="bi bi-arrow-down-circle-fill text-primary fs-4"></i>
+          </div>
+
+          <div>
+            <label class="form-label small fw-bold">Downstream Obligation (Dependent)</label>
+            <select name="downstream_id" class="form-select" required>
+              <option value="">Select downstream obligation...</option>
+              {% for o in all_obligations %}
+              <option value="{{ o.id }}">#{{ o.id }} ({{ o.actor }}) - {{ o.clause_text[:45] }}...</option>
+              {% endfor %}
+            </select>
+            <div class="form-text fs-xs">This obligation depends on the upstream condition.</div>
+          </div>
+
+          <div>
+            <label class="form-label small fw-bold">Relationship Note / Constraint</label>
+            <input type="text" name="note" class="form-control" placeholder="e.g. Prior Notice Required before Price Adjustment" required>
+          </div>
+        </div>
+        <div class="modal-footer border-top border-subtle">
+          <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary rounded-pill px-4">
+            <i class="bi bi-check2 me-1"></i> Add Link
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let networkInstance = null;
+  const contractId = "{{ active_contract_id or '' }}";
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadGraphData();
+  });
+
+  function loadGraphData() {
+    const url = `/obligations/api/graph-data${contractId ? '?contract_id=' + contractId : ''}`;
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        const container = document.getElementById('dependencyNetwork');
+        if (!container) return;
+
+        const networkData = {
+          nodes: new vis.DataSet(data.nodes),
+          edges: new vis.DataSet(data.edges)
+        };
+
+        const options = {
+          physics: {
+            solver: 'forceAtlas2Based',
+            forceAtlas2Based: {
+              gravitationalConstant: -70,
+              centralGravity: 0.015,
+              springLength: 160,
+              springConstant: 0.08
+            },
+            stabilization: { iterations: 120 }
+          },
+          nodes: {
+            shape: 'box',
+            margin: 12,
+            borderWidth: 2,
+            shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 6 }
+          },
+          edges: {
+            arrows: { to: { enabled: true, scaleFactor: 0.8 } },
+            color: { color: '#60a5fa', highlight: '#93c5fd' },
+            smooth: { type: 'cubicBezier', roundness: 0.3 }
+          },
+          interaction: { hover: true, tooltipDelay: 200 }
+        };
+
+        networkInstance = new vis.Network(container, networkData, options);
+
+        // Click handler to open node inspector panel
+        networkInstance.on('click', function(params) {
+          if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            const node = networkData.nodes.get(nodeId);
+            if (node) {
+              showInspector(node);
+            }
+          } else {
+            closeInspector();
+          }
+        });
+
+        // Double click handler to navigate to detail
+        networkInstance.on('doubleClick', function(params) {
+          if (params.nodes.length > 0) {
+            window.location.href = `/obligations/${params.nodes[0]}`;
+          }
+        });
+      })
+      .catch(err => console.error("Error loading graph topology:", err));
+  }
+
+  function fitNetwork() {
+    if (networkInstance) {
+      networkInstance.fit({ animation: { duration: 600, easingFunction: 'easeInOutQuad' } });
+    }
+  }
+
+  function showInspector(node) {
+    const panel = document.getElementById('nodeInspectorPanel');
+    if (!panel) return;
+
+    document.getElementById('inspectorIdBadge').textContent = '#' + node.id;
+    document.getElementById('inspectorClauseText').textContent = node.label.split('\n')[0];
+    document.getElementById('inspectorActor').textContent = node.label.split('\n')[1] || '';
+    document.getElementById('inspectorDetailBtn').href = `/obligations/${node.id}`;
+
+    panel.classList.remove('d-none');
+  }
+
+  function closeInspector() {
+    const panel = document.getElementById('nodeInspectorPanel');
+    if (panel) panel.classList.add('d-none');
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}Dispute #{{ dispute.id }} Case Timeline - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4 max-w-6xl mx-auto">
+  <!-- Top Navigation & Status -->
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <a href="{{ url_for('disputes.index') }}" class="btn btn-icon shadow-sm">
+        <i class="bi bi-arrow-left"></i>
+      </a>
+      <div>
+        <div class="d-flex align-items-center gap-2">
+          <h2 class="h4 fw-bold mb-0">Dispute Case #{{ dispute.id }}</h2>
+          {% if dispute.status == 'resolved' %}
+          <span class="badge bg-success font-monospace">RESOLVED</span>
+          {% else %}
+          <span class="badge bg-warning text-dark font-monospace">OPEN DISPUTE</span>
+          {% endif %}
+        </div>
+        <p class="text-muted small mb-0 mt-1">
+          Correlated to Obligation #{{ dispute.obligation_id }} • Contract: <strong>{{ dispute.contract_title or 'Master Agreement' }}</strong>
+        </p>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge-risk {{ dispute.risk_label | risk_badge }} fs-6 px-3 py-2">
+        {{ dispute.risk_label }} RISK ({{ dispute.risk_score | round(1) }})
+      </span>
+      {% if dispute.status == 'open' %}
+      <form action="{{ url_for('disputes.resolve', dispute_id=dispute.id) }}" method="POST">
+        <button type="submit" class="btn btn-success rounded-pill px-4 btn-sm shadow-sm">
+          <i class="bi bi-check-lg me-1"></i> Accept &amp; Resolve
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Countdown Banner -->
+  <div class="card-modern p-4" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%);">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+      <div class="d-flex align-items-center gap-3">
+        <div class="stat-icon bg-warning-subtle text-warning fs-3">
+          <i class="bi bi-hourglass-split"></i>
+        </div>
+        <div>
+          <div class="fw-bold small text-warning text-uppercase">Dispute Window Review Window</div>
+          <h5 class="fw-bold mb-0">
+            {% if dispute.status == 'resolved' %}
+            Dispute Successfully Resolved
+            {% elif hours_left > 0 %}
+            {{ hours_left }} Hours Remaining Before Escalation
+            {% else %}
+            Dispute Review Window Expired
+            {% endif %}
+          </h5>
+          <div class="text-muted fs-xs mt-1">
+            Current Compliance Status: <span class="badge-status {{ dispute.obligation_status | status_badge }}">{{ dispute.obligation_status }}</span> • Confidence Gauge: <strong class="text-primary font-monospace">{{ dispute.confidence | round }}%</strong>
+          </div>
+        </div>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="{{ url_for('obligations.detail', obligation_id=dispute.obligation_id) }}" class="btn btn-outline-primary rounded-pill btn-sm px-3">
+          Inspect Obligation <i class="bi bi-arrow-right ms-1"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Obligation Clause Reference Card -->
+  <div class="card-modern p-3 px-4">
+    <div class="row align-items-center g-3">
+      <div class="col-md-8">
+        <span class="text-muted fs-xs fw-bold text-uppercase">Covenant in Dispute</span>
+        <div class="fw-bold text-truncate">{{ dispute.clause_text }}</div>
+      </div>
+      <div class="col-md-4 text-md-end">
+        <span class="text-muted fs-xs fw-bold text-uppercase">Contracted Target</span>
+        <div class="font-monospace fw-bold text-primary">{{ dispute.target_value or 'Qualitative' }} {{ dispute.unit or '' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Side-by-Side Submissions Timeline -->
+  <div>
+    <div class="text-center mb-4">
+      <h3 class="h5 fw-bold mb-1">Side-by-Side Evidence &amp; Counter-Evidence Timeline</h3>
+      <p class="text-muted small">Compare claimant telemetry against obligated party rebuttal submissions in chronological order.</p>
+    </div>
+
+    <div class="row g-4">
+      <!-- Left Column: Obligated Party Counter-Evidence -->
+      <div class="col-md-6">
+        <div class="card-modern p-4 h-100 border-start border-4 border-warning">
+          <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom border-subtle">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-shield-shaded text-warning fs-5"></i>
+              <h5 class="mb-0 fw-bold fs-6">Obligated Party (Defense / Rebuttal)</h5>
+            </div>
+            <span class="badge bg-warning-subtle text-warning font-monospace fs-xs">DEFENSE</span>
+          </div>
+
+          <!-- Counter-evidence filings -->
+          <div class="d-flex flex-column gap-3">
+            <!-- Active dispute submission -->
+            <div class="p-3 rounded-3 bg-surface-elevated border border-warning-subtle">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="badge bg-warning text-dark font-monospace fs-xs">DISPUTE FILING</span>
+                <span class="text-muted fs-xs font-monospace">{{ dispute.created_at }}</span>
+              </div>
+              <div class="fw-semibold small mb-2">{{ dispute.counter_evidence }}</div>
+              <div class="d-flex justify-content-between align-items-center fs-xs text-muted pt-2 border-top border-subtle">
+                <span>By: <strong>{{ dispute.submitted_by }}</strong></span>
+                {% if dispute.attachment %}
+                <span class="badge bg-secondary-subtle text-secondary font-monospace">
+                  <i class="bi bi-paperclip me-1"></i>{{ dispute.attachment }}
+                </span>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Other correlated rebuttal evidence -->
+            {% for op in obligated_party_submissions %}
+            <div class="p-3 rounded-3 bg-surface border border-subtle">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="badge bg-secondary-subtle text-secondary font-monospace fs-xs">EVIDENCE #{{ op.id }}</span>
+                <span class="text-muted fs-xs font-monospace">{{ op.created_at }}</span>
+              </div>
+              <div class="small mb-2">{{ op.description }}</div>
+              <div class="d-flex justify-content-between align-items-center fs-xs text-muted pt-2 border-top border-subtle">
+                <span>Metric: <strong class="text-primary font-monospace">{{ op.observed_value or 'Attestation' }}</strong></span>
+                <span class="badge bg-primary-subtle text-primary">Trust: {{ op.trust_weight }}</span>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Counterparty Claims & Automated Ingested Evidence -->
+      <div class="col-md-6">
+        <div class="card-modern p-4 h-100 border-start border-4 border-primary">
+          <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom border-subtle">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-database-check text-primary fs-5"></i>
+              <h5 class="mb-0 fw-bold fs-6">Claimant / Automated Evidence Feeds</h5>
+            </div>
+            <span class="badge bg-primary-subtle text-primary font-monospace fs-xs">INDEPENDENT / CLAIMANT</span>
+          </div>
+
+          <div class="d-flex flex-column gap-3">
+            {% if counterparty_submissions %}
+              {% for cp in counterparty_submissions %}
+              <div class="p-3 rounded-3 bg-surface-elevated border border-subtle">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="badge bg-info-subtle text-info font-monospace fs-xs">
+                    <i class="bi bi-diagram-2 me-1"></i>{{ cp.source | upper }}
+                  </span>
+                  <span class="text-muted fs-xs font-monospace">{{ cp.created_at }}</span>
+                </div>
+                <div class="small mb-2">{{ cp.description }}</div>
+                <div class="d-flex justify-content-between align-items-center fs-xs text-muted pt-2 border-top border-subtle">
+                  <span>Recorded: <strong class="text-danger font-monospace">{{ cp.observed_value }}</strong></span>
+                  <span class="badge bg-success-subtle text-success">Trust: {{ cp.trust_weight }}</span>
+                </div>
+              </div>
+              {% endfor %}
+            {% else %}
+              <div class="p-4 text-center text-muted small bg-surface rounded-3">
+                <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                No conflicting claimant feeds registered.
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Actions -->
+  <div class="d-flex justify-content-between align-items-center pt-3 border-top border-subtle">
+    <a href="{{ url_for('disputes.index') }}" class="btn btn-outline-secondary rounded-pill px-4">
+      <i class="bi bi-arrow-left me-1"></i> Back to Disputes
+    </a>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('disputes.create', obligation_id=dispute.obligation_id) }}" class="btn btn-outline-warning rounded-pill px-4">
+        <i class="bi bi-plus-lg me-1"></i> Add Supplemental Counter-Evidence
+      </a>
+      {% if dispute.status == 'open' %}
+      <form action="{{ url_for('disputes.resolve', dispute_id=dispute.id) }}" method="POST">
+        <button type="submit" class="btn btn-success rounded-pill px-4 shadow">
+          <i class="bi bi-check2-circle me-1"></i> Accept &amp; Resolve Dispute
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

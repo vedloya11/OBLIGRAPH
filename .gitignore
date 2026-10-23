@@ -1,0 +1,32 @@
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases & uploads
+*.db
+*.sqlite3
+test_obligraph.db
+obligraph.db
+uploads/*
+!uploads/.gitkeep
+
+# Secrets & Local Configurations
+.env
+.env.local
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

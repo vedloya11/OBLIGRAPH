@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+
+{% block title %}Cryptographic Escalation Ledger - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+  <!-- Page Header -->
+  <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+    <div>
+      <div class="d-flex align-items-center gap-2">
+        <h2 class="h4 fw-bold mb-0">Cryptographic Escalation Ledger</h2>
+        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill font-monospace" style="font-size: 0.75rem;">
+          SHA-256 HASH CHAIN
+        </span>
+      </div>
+      <p class="text-muted small mb-0 mt-1">
+        Immutable, tamper-evident audit ledger preserving cryptographic chain-of-custody for unmitigated breach events.
+      </p>
+    </div>
+
+    <!-- Chain Controls -->
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3 shadow-sm" id="btnSimulateTamper" data-bs-toggle="modal" data-bs-target="#tamperModal">
+        <i class="bi bi-bug me-1"></i> Simulate Tamper
+      </button>
+
+      <form action="{{ url_for('escalations.repair') }}" method="POST" class="d-inline">
+        <button type="submit" class="btn btn-outline-warning btn-sm rounded-pill px-3 shadow-sm" title="Re-anchor hashes from Genesis block">
+          <i class="bi bi-wrench me-1"></i> Repair Chain
+        </button>
+      </form>
+
+      <form action="{{ url_for('escalations.verify') }}" method="POST" class="d-inline">
+        <button type="submit" class="btn btn-success btn-sm rounded-pill px-4 shadow-sm" id="btnVerifyChain">
+          <i class="bi bi-shield-check me-1"></i> Verify Chain Integrity
+        </button>
+      </form>
+
+      <button type="button" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#manualEscalateModal">
+        <i class="bi bi-plus-circle me-1"></i> Log Escalation
+      </button>
+    </div>
+  </div>
+
+  <!-- Verification Status Banner -->
+  <div class="card-modern p-3 {% if verification.is_valid %}border-success{% else %}border-danger bg-danger-subtle{% endif %}" style="border-width: 1.5px;">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+      <div class="d-flex align-items-center gap-3">
+        <div class="stat-icon {% if verification.is_valid %}bg-success-subtle text-success{% else %}bg-danger text-white{% endif %} fs-4">
+          <i class="bi {% if verification.is_valid %}bi-patch-check-fill{% else %}bi-shield-fill-x{% endif %}"></i>
+        </div>
+        <div>
+          <div class="fw-bold {% if verification.is_valid %}text-success{% else %}text-danger{% endif %}">
+            {% if verification.is_valid %}
+              Cryptographic Hash Chain Verified Intact
+            {% else %}
+              Tamper Detected! Cryptographic Mismatch Flagged
+            {% endif %}
+          </div>
+          <div class="text-muted small">
+            {% if verification.is_valid %}
+              {{ verification.message }} ({{ verification.total_blocks }} blocks chained with SHA-256)
+            {% else %}
+              {{ verification.reason }}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge {% if verification.is_valid %}bg-success text-white{% else %}bg-danger text-white animate-pulse{% endif %} rounded-pill px-3 py-2 font-monospace">
+          {% if verification.is_valid %}CHAIN VALID{% else %}INTEGRITY COMPROMISED{% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chain KPI Summary Cards -->
+  <div class="row g-3">
+    <div class="col-sm-6 col-lg-3">
+      <div class="card-modern p-3">
+        <div class="text-muted fs-xs text-uppercase fw-bold">Total Escalated Blocks</div>
+        <div class="h3 fw-bold mb-0 mt-1 font-monospace text-primary">{{ escalations | length }}</div>
+        <div class="text-muted fs-xs mt-1">Immutable blocks</div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card-modern p-3">
+        <div class="text-muted fs-xs text-uppercase fw-bold">Chain Status</div>
+        <div class="h3 fw-bold mb-0 mt-1 {% if verification.is_valid %}text-success{% else %}text-danger{% endif %}">
+          {% if verification.is_valid %}Sealed{% else %}Breached{% endif %}
+        </div>
+        <div class="text-muted fs-xs mt-1">SHA-256 sequential link</div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card-modern p-3">
+        <div class="text-muted fs-xs text-uppercase fw-bold">Genesis Anchor</div>
+        <div class="fw-bold mb-0 mt-1 font-monospace text-muted small text-truncate" title="0000000000000000000000000000000000000000000000000000000000000000">
+          0000000000000000...
+        </div>
+        <div class="text-muted fs-xs mt-1">256-bit zero seed</div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card-modern p-3">
+        <div class="text-muted fs-xs text-uppercase fw-bold">Latest Hash Head</div>
+        <div class="fw-bold mb-0 mt-1 font-monospace text-primary small text-truncate" title="{{ escalations[-1].entry_hash if escalations else 'None' }}">
+          {% if escalations %}
+            {{ escalations[-1].entry_hash[:16] }}...
+          {% else %}
+            Uninitialized
+          {% endif %}
+        </div>
+        <div class="text-muted fs-xs mt-1">Current chain apex</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Visual Blockchain View -->
+  <div class="card-modern">
+    <div class="card-header-modern">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-link-45deg text-primary fs-5"></i>
+        <h5 class="mb-0 fw-bold fs-6">Cryptographic Block Flow Visualizer</h5>
+      </div>
+      <span class="text-muted fs-xs font-monospace">hash = SHA-256(id + timestamp + obligation_id + reason + prev_hash)</span>
+    </div>
+    <div class="card-body-modern p-4">
+      {% if escalations %}
+      <div class="d-flex flex-column gap-3">
+        {% for e in escalations %}
+        <div class="block-card p-3 rounded-4 border position-relative" style="background: var(--bg-surface-elevated); border-color: var(--border-color);">
+          <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-2 mb-2">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge {% if loop.first %}bg-primary{% else %}bg-secondary{% endif %} font-monospace px-3 py-1">
+                BLOCK #{{ e.id }} {% if loop.first %}[GENESIS]{% endif %}
+              </span>
+              <span class="badge-risk badge-risk-high">Risk {{ e.risk_score | round(1) }}</span>
+              <span class="text-muted fs-xs font-monospace"><i class="bi bi-clock me-1"></i>{{ e.created_at }}</span>
+            </div>
+            <div>
+              <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill font-monospace fs-xs">
+                <i class="bi bi-lock-fill me-1"></i>SEALED
+              </span>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <div class="fw-semibold small text-truncate" title="{{ e.clause_text }}">
+              <a href="{{ url_for('obligations.detail', obligation_id=e.obligation_id) }}" class="text-decoration-none text-reset">
+                Obligation #{{ e.obligation_id }}: {{ e.clause_text or 'Contract Obligation' }}
+              </a>
+            </div>
+            <div class="text-danger small mt-1">
+              <i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Escalation Reason:</strong> {{ e.reason }}
+            </div>
+          </div>
+
+          <!-- Hash Strip -->
+          <div class="row g-2 font-monospace fs-xs">
+            <div class="col-md-6">
+              <div class="p-2 rounded border" style="background: var(--bg-surface);">
+                <div class="text-muted fs-xs mb-1">PREVIOUS HASH (prev_hash)</div>
+                <div class="d-flex align-items-center justify-content-between">
+                  <span class="text-muted text-truncate" style="max-width: 80%;" title="{{ e.prev_hash }}">{{ e.prev_hash }}</span>
+                  <button class="btn btn-sm btn-link p-0 text-muted" onclick="navigator.clipboard.writeText('{{ e.prev_hash }}'); alert('Previous hash copied!');" title="Copy full SHA-256">
+                    <i class="bi bi-clipboard"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="p-2 rounded border border-primary-subtle" style="background: var(--bg-surface);">
+                <div class="text-primary fs-xs mb-1">CURRENT BLOCK HASH (entry_hash)</div>
+                <div class="d-flex align-items-center justify-content-between">
+                  <span class="text-primary fw-bold text-truncate" style="max-width: 80%;" title="{{ e.entry_hash }}">{{ e.entry_hash }}</span>
+                  <button class="btn btn-sm btn-link p-0 text-primary" onclick="navigator.clipboard.writeText('{{ e.entry_hash }}'); alert('Entry hash copied!');" title="Copy full SHA-256">
+                    <i class="bi bi-clipboard"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Downward Link Indicator -->
+          {% if not loop.last %}
+          <div class="text-center my-2 text-primary">
+            <i class="bi bi-arrow-down-circle-fill fs-5"></i>
+            <span class="fs-xs font-monospace text-muted ms-1">cryptographically links to Block #{{ e.id + 1 }}</span>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+        {% set icon = 'bi-link-45deg' %}
+        {% set title = 'No Escalated Violations' %}
+        {% set description = 'Escalations are automatically appended to the SHA-256 tamper-evident log when an obligation breaches and the 48-hour dispute window expires.' %}
+        {% set action_url = url_for('obligations.index') %}
+        {% set action_label = 'Inspect Obligations' %}
+        {% include 'components/empty_state.html' %}
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Detailed Audit Table -->
+  {% if escalations %}
+  <div class="card-modern">
+    <div class="card-header-modern">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-table text-muted fs-5"></i>
+        <h5 class="mb-0 fw-bold fs-6">Ledger Audit Records</h5>
+      </div>
+    </div>
+    <div class="card-body-modern p-0">
+      <div class="table-responsive">
+        <table class="table-modern">
+          <thead>
+            <tr>
+              <th>Block</th>
+              <th>Obligation &amp; Actor</th>
+              <th>Escalation Reason</th>
+              <th>Risk Score</th>
+              <th>prev_hash</th>
+              <th>entry_hash</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in escalations %}
+            <tr>
+              <td class="font-monospace fw-bold text-primary">#{{ e.id }}</td>
+              <td>
+                <a href="{{ url_for('obligations.detail', obligation_id=e.obligation_id) }}" class="text-decoration-none text-reset small fw-semibold">
+                  #{{ e.obligation_id }} {{ e.clause_text[:40] }}...
+                </a>
+                <div class="text-muted fs-xs">{{ e.actor }}</div>
+              </td>
+              <td class="small text-danger fw-semibold" style="max-width: 250px;">
+                {{ e.reason }}
+              </td>
+              <td>
+                <span class="badge-risk badge-risk-high">{{ e.risk_score | round(1) }}</span>
+              </td>
+              <td class="font-monospace fs-xs text-muted text-truncate" style="max-width: 120px;" title="{{ e.prev_hash }}">
+                {{ e.prev_hash[:12] }}...
+              </td>
+              <td class="font-monospace fs-xs text-primary fw-bold text-truncate" style="max-width: 120px;" title="{{ e.entry_hash }}">
+                {{ e.entry_hash[:12] }}...
+              </td>
+              <td class="small text-muted font-monospace fs-xs">{{ e.created_at }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Simulate Tampering Modal -->
+<div class="modal fade" id="tamperModal" tabindex="-1" aria-labelledby="tamperModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content card-modern border-0">
+      <div class="modal-header border-bottom border-subtle">
+        <h5 class="modal-title fs-6 fw-bold text-danger" id="tamperModalLabel">
+          <i class="bi bi-bug me-2"></i>Simulate Ledger Tampering
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('escalations.tamper') }}" method="POST">
+        <div class="modal-body p-4">
+          <p class="small text-muted">
+            This security test modifies a block's underlying database record directly <strong>without recomputing its SHA-256 hash</strong>. 
+            The verification tripwire should immediately flag the corrupted block.
+          </p>
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Select Block to Tamper</label>
+            <select name="block_id" class="form-select font-monospace">
+              {% if escalations %}
+                {% for e in escalations %}
+                <option value="{{ e.id }}" {% if loop.last %}selected{% endif %}>Block #{{ e.id }} (Obligation #{{ e.obligation_id }})</option>
+                {% endfor %}
+              {% else %}
+                <option value="" disabled selected>No blocks exist</option>
+              {% endif %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer border-top border-subtle">
+          <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger rounded-pill px-4" {% if not escalations %}disabled{% endif %}>
+            Corrupt Selected Block
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Manual Log Escalation Modal -->
+<div class="modal fade" id="manualEscalateModal" tabindex="-1" aria-labelledby="manualEscalateModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content card-modern border-0">
+      <div class="modal-header border-bottom border-subtle">
+        <h5 class="modal-title fs-6 fw-bold" id="manualEscalateModalLabel">
+          <i class="bi bi-shield-exclamation text-danger me-2"></i>Append Escalation to Chain
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('escalations.create') }}" method="POST">
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Select Obligation</label>
+            <select name="obligation_id" class="form-select" required>
+              {% for vo in violatable_obligations %}
+              <option value="{{ vo.id }}">
+                #{{ vo.id }}: {{ vo.clause_text[:50] }}... (Risk: {{ vo.risk_score }})
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Escalation Reason / Violation Finding</label>
+            <textarea name="reason" class="form-control" rows="3" placeholder="Describe the unmitigated breach or expired dispute window..." required>48-Hour counter-evidence window expired without resolution. Irreversible breach recorded.</textarea>
+          </div>
+        </div>
+        <div class="modal-footer border-top border-subtle">
+          <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary rounded-pill px-4">
+            Append Block to Chain
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+
+{% block title %}Obligation #{{ obligation.id }} Details - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4 max-w-6xl mx-auto">
+  <!-- Top Navigation & Status Header -->
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <a href="{{ url_for('obligations.index') }}" class="btn btn-icon shadow-sm" title="Back to Obligations">
+        <i class="bi bi-arrow-left"></i>
+      </a>
+      <div>
+        <div class="d-flex align-items-center gap-2">
+          <h2 class="h4 fw-bold mb-0">Obligation Record #{{ obligation.id }}</h2>
+          <span class="badge-status {{ obligation.status | status_badge }}">{{ obligation.status }}</span>
+        </div>
+        <p class="text-muted small mb-0 mt-1">
+          Contract: <strong class="text-primary">{{ obligation.contract_title or 'Master Agreement' }}</strong>
+        </p>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge-risk {{ obligation.risk_label | risk_badge }} fs-6 px-3 py-2">
+        <i class="bi bi-shield-exclamation me-1"></i>
+        {{ obligation.risk_label }} RISK ({{ obligation.risk_score | round(1) }}/100)
+      </span>
+      <a href="{{ url_for('obligations.graph') }}" class="btn btn-outline-warning rounded-pill px-3 btn-sm">
+        <i class="bi bi-bezier2 me-1"></i> View in Graph
+      </a>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Left Column: Canonical 6 Fields, Dependencies & Timeline -->
+    <div class="col-lg-8 d-flex flex-column gap-4">
+      <!-- 1. The Canonical Six Fields -->
+      <div class="card-modern">
+        <div class="card-header-modern">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-file-earmark-check text-primary fs-5"></i>
+            <h5 class="mb-0 fw-bold fs-6">Six-Field Canonical Legal Record</h5>
+          </div>
+          <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace" style="font-size: 0.7rem;">
+            DETERMINISTIC
+          </span>
+        </div>
+        <div class="card-body-modern p-4">
+          <!-- Original Clause -->
+          <div class="mb-4">
+            <label class="text-muted fs-xs fw-bold text-uppercase mb-1">Original Contract Clause</label>
+            <div class="p-3 rounded-3 bg-surface-elevated border border-subtle font-monospace small" style="line-height: 1.6;">
+              "{{ obligation.clause_text }}"
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <!-- 1. Actor -->
+            <div class="col-md-6">
+              <div class="p-3 rounded-3 border border-subtle h-100" style="background: var(--bg-surface);">
+                <div class="text-muted fs-xs fw-bold text-uppercase mb-1">
+                  <i class="bi bi-person-badge text-primary me-1"></i>1. Obligated Actor
+                </div>
+                <div class="fw-bold fs-6">{{ obligation.actor }}</div>
+              </div>
+            </div>
+
+            <!-- 2. Trigger / Deadline -->
+            <div class="col-md-6">
+              <div class="p-3 rounded-3 border border-subtle h-100" style="background: var(--bg-surface);">
+                <div class="text-muted fs-xs fw-bold text-uppercase mb-1">
+                  <i class="bi bi-clock-history text-primary me-1"></i>2. Trigger / Deadline
+                </div>
+                <div class="fw-bold fs-6">{{ obligation.deadline_date or obligation.trigger_deadline }}</div>
+                <div class="text-muted fs-xs mt-1">{{ obligation.trigger_deadline }}</div>
+              </div>
+            </div>
+
+            <!-- 3. Required Evidence -->
+            <div class="col-md-6">
+              <div class="p-3 rounded-3 border border-subtle h-100" style="background: var(--bg-surface);">
+                <div class="text-muted fs-xs fw-bold text-uppercase mb-1">
+                  <i class="bi bi-file-earmark-check text-primary me-1"></i>3. Required Evidence
+                </div>
+                <div class="fw-semibold small">{{ obligation.required_evidence }}</div>
+              </div>
+            </div>
+
+            <!-- 4. Expected State -->
+            <div class="col-md-6">
+              <div class="p-3 rounded-3 border border-subtle h-100" style="background: var(--bg-surface);">
+                <div class="text-muted fs-xs fw-bold text-uppercase mb-1">
+                  <i class="bi bi-bullseye text-success me-1"></i>4. Expected State / Target
+                </div>
+                <div class="fw-bold text-success">{{ obligation.expected_state }}</div>
+                {% if obligation.target_value is not none %}
+                <div class="font-monospace fs-xs text-muted mt-1">
+                  Target: <strong>{{ obligation.target_value }} {{ obligation.unit }}</strong>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- 5. Violation Condition -->
+            <div class="col-md-6">
+              <div class="p-3 rounded-3 border border-subtle h-100" style="background: var(--bg-surface);">
+                <div class="text-muted fs-xs fw-bold text-uppercase mb-1">
+                  <i class="bi bi-exclamation-octagon text-danger me-1"></i>5. Violation Condition
+                </div>
+                <div class="text-danger small">{{ obligation.violation_condition }}</div>
+              </div>
+            </div>
+
+            <!-- 6. Remediation Action -->
+            <div class="col-md-6">
+              <div class="p-3 rounded-3 border border-subtle h-100" style="background: var(--bg-surface);">
+                <div class="text-muted fs-xs fw-bold text-uppercase mb-1">
+                  <i class="bi bi-arrow-counterclockwise text-warning me-1"></i>6. Remediation Protocol
+                </div>
+                <div class="text-muted small">{{ obligation.remediation_action }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Interactive Dependency Links -->
+      <div class="card-modern" id="dependenciesSection">
+        <div class="card-header-modern">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-bezier2 text-warning fs-5"></i>
+            <h5 class="mb-0 fw-bold fs-6">Contract Dependency Topology Links</h5>
+          </div>
+          <button class="btn btn-sm btn-outline-primary rounded-pill px-3" data-bs-toggle="collapse" data-bs-target="#addDepCollapse">
+            <i class="bi bi-plus-lg me-1"></i> Add Link
+          </button>
+        </div>
+
+        <div class="card-body-modern p-4">
+          <!-- Collapsible Add Dependency Form -->
+          <div class="collapse mb-4" id="addDepCollapse">
+            <div class="p-3 rounded-3 border border-primary-subtle" style="background: var(--bg-surface-elevated);">
+              <h6 class="fw-bold small mb-3 text-primary">Create Dependency Link for Obligation #{{ obligation.id }}</h6>
+              <form action="{{ url_for('obligations.add_dependency') }}" method="POST">
+                <div class="row g-2 mb-2">
+                  <div class="col-md-4">
+                    <label class="form-label fs-xs fw-bold">Direction</label>
+                    <select class="form-select form-select-sm" id="depDirection" onchange="toggleDepDirection()">
+                      <option value="upstream">Depends on (Upstream)</option>
+                      <option value="downstream">Enables / Blocks (Downstream)</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label fs-xs fw-bold">Target Obligation</label>
+                    <select name="other_id" id="otherIdSelect" class="form-select form-select-sm" required>
+                      {% for s in sibling_obligations %}
+                      <option value="{{ s.id }}">#{{ s.id }} ({{ s.actor }}) - {{ s.clause_text[:40] }}...</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label fs-xs fw-bold">Dependency Note / Constraint</label>
+                    <input type="text" name="note" class="form-control form-control-sm" placeholder="e.g. Prerequisite Notice" required>
+                  </div>
+                </div>
+                <input type="hidden" name="upstream_id" id="finalUpstreamId" value="">
+                <input type="hidden" name="downstream_id" id="finalDownstreamId" value="">
+                
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                  <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" data-bs-toggle="collapse" data-bs-target="#addDepCollapse">Cancel</button>
+                  <button type="submit" class="btn btn-sm btn-primary rounded-pill px-4" onclick="prepareDepSubmission('{{ obligation.id }}')">
+                    Save Dependency
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Upstream Prerequisites -->
+          <div class="mb-4">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="badge bg-warning-subtle text-warning border border-warning-subtle font-monospace fs-xs">UPSTREAM PREREQUISITES</span>
+              <span class="text-muted fs-xs">Obligations that must be met BEFORE this clause</span>
+            </div>
+            {% if upstream %}
+            <div class="list-group list-group-flush border rounded-3 overflow-hidden">
+              {% for u in upstream %}
+              <div class="list-group-item bg-surface d-flex justify-content-between align-items-center p-3 border-subtle">
+                <div>
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="badge bg-primary-subtle text-primary font-monospace">#{{ u.id }}</span>
+                    <a href="{{ url_for('obligations.detail', obligation_id=u.id) }}" class="fw-semibold text-decoration-none">
+                      {{ u.clause_text[:65] }}...
+                    </a>
+                    <span class="badge-risk {{ u.risk_label | risk_badge }}">{{ u.risk_label }}</span>
+                  </div>
+                  <div class="text-muted fs-xs"><i class="bi bi-arrow-return-right me-1 text-warning"></i>Constraint: <strong>{{ u.note }}</strong></div>
+                </div>
+                <form action="{{ url_for('obligations.delete_dependency', dep_id=u.dep_id) }}" method="POST" onsubmit="return confirm('Remove this dependency link?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger border-0 p-1" title="Remove dependency">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                </form>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="p-3 rounded-3 text-muted small border border-subtle" style="background: var(--bg-surface-elevated);">
+              <i class="bi bi-info-circle me-1"></i> No upstream prerequisites registered for this obligation.
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Downstream Impact -->
+          <div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="badge bg-info-subtle text-info border border-info-subtle font-monospace fs-xs">DOWNSTREAM DEPENDENTS</span>
+              <span class="text-muted fs-xs">Obligations that depend directly ON this clause</span>
+            </div>
+            {% if downstream %}
+            <div class="list-group list-group-flush border rounded-3 overflow-hidden">
+              {% for d in downstream %}
+              <div class="list-group-item bg-surface d-flex justify-content-between align-items-center p-3 border-subtle">
+                <div>
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="badge bg-primary-subtle text-primary font-monospace">#{{ d.id }}</span>
+                    <a href="{{ url_for('obligations.detail', obligation_id=d.id) }}" class="fw-semibold text-decoration-none">
+                      {{ d.clause_text[:65] }}...
+                    </a>
+                    <span class="badge-risk {{ d.risk_label | risk_badge }}">{{ d.risk_label }}</span>
+                  </div>
+                  <div class="text-muted fs-xs"><i class="bi bi-arrow-return-right me-1 text-info"></i>Constraint: <strong>{{ d.note }}</strong></div>
+                </div>
+                <form action="{{ url_for('obligations.delete_dependency', dep_id=d.dep_id) }}" method="POST" onsubmit="return confirm('Remove this dependency link?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger border-0 p-1" title="Remove dependency">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                </form>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="p-3 rounded-3 text-muted small border border-subtle" style="background: var(--bg-surface-elevated);">
+              <i class="bi bi-info-circle me-1"></i> No downstream clauses depend on this obligation.
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Audit History & Execution Timeline -->
+      <div class="card-modern">
+        <div class="card-header-modern">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-clock-history text-primary fs-5"></i>
+            <h5 class="mb-0 fw-bold fs-6">Audit Trail & Evidence Timeline</h5>
+          </div>
+        </div>
+        <div class="card-body-modern p-4">
+          <div class="d-flex flex-column gap-3">
+            <div class="d-flex align-items-center justify-content-between p-2 rounded bg-surface border border-subtle small">
+              <span class="text-muted">Extracted & Ingested into Database</span>
+              <span class="font-monospace">{{ obligation.updated_at or 'Current Session' }}</span>
+            </div>
+            <div class="d-flex align-items-center justify-content-between p-2 rounded bg-surface border border-subtle small">
+              <span class="text-muted">Correlated Evidence Items</span>
+              <span class="fw-bold">{{ evidence | length }} item{{ 's' if evidence | length != 1 else '' }}</span>
+            </div>
+            <div class="d-flex align-items-center justify-content-between p-2 rounded bg-surface border border-subtle small">
+              <span class="text-muted">Dispute Window Status</span>
+              <span class="badge bg-secondary-subtle text-secondary">{{ 'Active Dispute' if disputes else 'No Open Disputes' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Confidence Gauge & Mathematical Breakdown -->
+    <div class="col-lg-4 d-flex flex-column gap-4">
+      <!-- Confidence Gauge Card -->
+      <div class="card-modern p-4 text-center">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h6 class="fw-bold mb-0">Compliance Confidence</h6>
+          <span class="badge bg-success-subtle text-success border border-success-subtle">CALIBRATED</span>
+        </div>
+
+        <!-- Circular Visual Gauge -->
+        <div class="position-relative d-inline-flex align-items-center justify-content-center my-3" style="width: 150px; height: 150px;">
+          <svg viewBox="0 0 36 36" style="width: 140px; height: 140px; transform: rotate(-90deg);">
+            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--bg-surface-elevated)" stroke-width="3" />
+            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="{% if obligation.confidence >= 70 %}#10b981{% elif obligation.confidence >= 35 %}#f59e0b{% else %}#ef4444{% endif %}" stroke-width="3.5" stroke-dasharray="{{ obligation.confidence }}, 100" stroke-linecap="round" />
+          </svg>
+          <div class="position-absolute text-center">
+            <div class="display-6 fw-bold font-monospace mb-0" style="color: {% if obligation.confidence >= 70 %}var(--risk-low){% elif obligation.confidence >= 35 %}var(--risk-medium){% else %}var(--risk-high){% endif %};">
+              {{ obligation.confidence | round }}%
+            </div>
+            <div class="text-muted fs-xs text-uppercase fw-bold">Confidence</div>
+          </div>
+        </div>
+
+        <p class="text-muted small mb-0">
+          Trust-weighted consensus computed from verified multi-source evidence feeds (email, spreadsheet, manual proof).
+        </p>
+      </div>
+
+      <!-- Risk Score Composition Breakdown -->
+      <div class="card-modern p-4">
+        <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+          <h6 class="fw-bold mb-0">Risk Score Composition</h6>
+          <span class="badge-risk {{ obligation.risk_label | risk_badge }}">
+            {{ obligation.risk_score | round(1) }}
+          </span>
+        </div>
+
+        <div class="d-flex flex-column gap-3">
+          <div>
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="text-muted">w1: Target State Deviation</span>
+              <span class="font-monospace fw-bold">45% weight</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-danger" style="width: 45%;"></div>
+            </div>
+            <div class="text-muted fs-xs mt-1">Variance between observed delivery metrics & expected state.</div>
+          </div>
+
+          <div>
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="text-muted">w2: Evidence Trust Deficit</span>
+              <span class="font-monospace fw-bold">25% weight</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-warning" style="width: 25%;"></div>
+            </div>
+            <div class="text-muted fs-xs mt-1">Penalty for self-reported or unconfirmed proof (1 - trust_weight).</div>
+          </div>
+
+          <div>
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="text-muted">w3: Deadline Proximity</span>
+              <span class="font-monospace fw-bold">30% weight</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-info" style="width: 30%;"></div>
+            </div>
+            <div class="text-muted fs-xs mt-1">Decay curve rising exponentially as remaining days decrease.</div>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-top border-subtle d-flex flex-column gap-2">
+          <a href="{{ url_for('evidence.index') }}" class="btn btn-outline-primary rounded-pill btn-sm w-100">
+            <i class="bi bi-plus-circle me-1"></i> Log Evidence for this Obligation
+          </a>
+          <a href="{{ url_for('disputes.index') }}" class="btn btn-outline-warning rounded-pill btn-sm w-100">
+            <i class="bi bi-arrow-left-right me-1"></i> Open Dispute
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function toggleDepDirection() {
+    // Helper visual handler
+  }
+
+  function prepareDepSubmission(currentId) {
+    const dir = document.getElementById('depDirection').value;
+    const otherId = document.getElementById('otherIdSelect').value;
+    const upInput = document.getElementById('finalUpstreamId');
+    const downInput = document.getElementById('finalDownstreamId');
+
+    if (dir === 'upstream') {
+      // current depends on other -> other is upstream, current is downstream
+      upInput.value = otherId;
+      downInput.value = currentId;
+    } else {
+      // current enables other -> current is upstream, other is downstream
+      upInput.value = currentId;
+      downInput.value = otherId;
+    }
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Engine Settings - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4 max-w-4xl mx-auto">
+  <div>
+    <h2 class="h4 fw-bold mb-1">Engine Parameters & Calibrations</h2>
+    <p class="text-muted small mb-0">Fine-tune mathematical weights, risk thresholds, dispute review windows, and data feeds.</p>
+  </div>
+
+  <form action="{{ url_for('settings.index') }}" method="POST">
+    <div class="card-modern p-4 mb-4">
+      <h5 class="fw-bold mb-3 border-bottom pb-2">1. Risk Score Thresholds</h5>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">HIGH Risk Cutoff (≥)</label>
+          <input type="number" step="0.5" class="form-control" name="risk_threshold_high" value="{{ settings.get('risk_threshold_high', '70.0') }}" required>
+          <div class="form-text">Triggers dispute window and potential escalation.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">MEDIUM Risk Cutoff (≥)</label>
+          <input type="number" step="0.5" class="form-control" name="risk_threshold_medium" value="{{ settings.get('risk_threshold_medium', '35.0') }}" required>
+          <div class="form-text">Values below this threshold are categorized as LOW risk.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-modern p-4 mb-4">
+      <h5 class="fw-bold mb-3 border-bottom pb-2">2. Dispute Window Protocol</h5>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">Dispute Window Duration (Hours)</label>
+          <input type="number" class="form-control" name="dispute_window_hours" value="{{ settings.get('dispute_window_hours', '48') }}" required>
+          <div class="form-text">Review time allowed for obligated party before breach is committed to hash chain.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-modern p-4 mb-4">
+      <h5 class="fw-bold mb-3 border-bottom pb-2">3. Evidence Source Trust Weights</h5>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">Self-Reported (Manual)</label>
+          <input type="number" step="0.05" min="0" max="1" class="form-control" name="weight_self_reported" value="{{ settings.get('weight_self_reported', '0.4') }}" required>
+          <div class="form-text">Default: 0.40</div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">Counterparty-Confirmed</label>
+          <input type="number" step="0.05" min="0" max="1" class="form-control" name="weight_counterparty_confirmed" value="{{ settings.get('weight_counterparty_confirmed', '0.7') }}" required>
+          <div class="form-text">Default: 0.70 (e.g. Email confirmation)</div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">Independently Verifiable</label>
+          <input type="number" step="0.05" min="0" max="1" class="form-control" name="weight_independently_verifiable" value="{{ settings.get('weight_independently_verifiable', '1.0') }}" required>
+          <div class="form-text">Default: 1.00 (e.g. Lab certificate, ERP)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-modern p-4 mb-4">
+      <h5 class="fw-bold mb-3 border-bottom pb-2">4. Risk Equation Weights (Sum = 1.00)</h5>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">w1: Target Deviation</label>
+          <input type="number" step="0.05" min="0" max="1" class="form-control" name="risk_weight_deviation" value="{{ settings.get('risk_weight_deviation', '0.45') }}" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">w2: Evidence Trust Deficit</label>
+          <input type="number" step="0.05" min="0" max="1" class="form-control" name="risk_weight_untrusted" value="{{ settings.get('risk_weight_untrusted', '0.25') }}" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small fw-bold">w3: Deadline Proximity</label>
+          <input type="number" step="0.05" min="0" max="1" class="form-control" name="risk_weight_deadline" value="{{ settings.get('risk_weight_deadline', '0.30') }}" required>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-modern p-4 mb-4">
+      <h5 class="fw-bold mb-3 border-bottom pb-2">5. External Connectors</h5>
+      <div class="mb-3">
+        <label class="form-label small fw-bold">Google Sheet Published CSV Feed URL</label>
+        <input type="url" class="form-control" name="google_sheet_csv_url" value="{{ settings.get('google_sheet_csv_url', '') }}" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+        <div class="form-text">Published CSV export link containing timestamped delivery logs.</div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mb-4">
+      <button type="submit" class="btn btn-primary rounded-pill px-5 py-2 shadow">
+        <i class="bi bi-save me-1"></i> Save Configuration
+      </button>
+    </div>
+  </form>
+
+  <!-- 6. One-Click Demo Reset Card -->
+  <div class="card-modern p-4 mb-4" style="background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.25);">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+      <div>
+        <h5 class="fw-bold mb-1 d-flex align-items-center gap-2 text-warning">
+          <i class="bi bi-arrow-counterclockwise"></i>
+          <span>6. One-Click Demo Reset & Seed</span>
+        </h5>
+        <p class="text-muted small mb-0">
+          Cleanly resets all database tables and loads the canonical 10-clause Master Supply Agreement, dependency graph, multi-channel evidence, an active dispute, and a sealed SHA-256 escalation block.
+        </p>
+      </div>
+      <button type="button" class="btn btn-outline-warning rounded-pill px-4 py-2 text-nowrap" data-bs-toggle="modal" data-bs-target="#confirmResetDemoModal">
+        <i class="bi bi-database-fill-gear me-1"></i> Reset & Load Demo
+      </button>
+    </div>
+  </div>
+
+  <!-- Confirm Reset Demo Modal -->
+  <div class="modal fade" id="confirmResetDemoModal" tabindex="-1" aria-labelledby="confirmResetDemoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content card-modern border-0">
+        <div class="modal-header border-bottom border-subtle">
+          <h5 class="modal-title fs-6 fw-bold text-warning" id="confirmResetDemoLabel">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Demo Environment Reset
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <p class="small mb-3">
+            This will wipe any custom ingested contracts and populate the canonical OBLIGRAPH evaluation scenario:
+          </p>
+          <ul class="small text-muted mb-3">
+            <li>1 Master Supply Agreement with 10 structured obligations</li>
+            <li>4 topological dependency relationships</li>
+            <li>Multi-channel evidence (Email IMAP, Google Sheet, Manual Upload)</li>
+            <li>1 deliberate violation (Chemical Purity 98.1% vs 98.5%)</li>
+            <li>1 active counter-evidence dispute under 48h review</li>
+            <li>Cryptographic SHA-256 hash-chain block #1</li>
+          </ul>
+        </div>
+        <div class="modal-footer border-top border-subtle p-3">
+          <button type="button" class="btn btn-outline-secondary rounded-pill btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
+          <form action="{{ url_for('settings.reset_demo') }}" method="POST" class="d-inline">
+            <button type="submit" class="btn btn-warning rounded-pill btn-sm px-4 fw-semibold text-dark">
+              Yes, Reset & Load Demo
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

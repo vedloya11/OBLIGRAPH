@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compliance Audit Report - {{ audit_id }}</title>
+  
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+
+  <style>
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        font-size: 11pt;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .report-sheet {
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        background: transparent !important;
+        max-width: 100% !important;
+      }
+      .card-modern, .table-modern {
+        border: 1px solid #d1d5db !important;
+        background: #ffffff !important;
+        color: #111827 !important;
+      }
+      .table-modern th {
+        background-color: #f3f4f6 !important;
+        color: #111827 !important;
+      }
+      .badge-risk, .badge-status {
+        border: 1px solid #6b7280 !important;
+        color: #111827 !important;
+      }
+      .page-break {
+        page-break-before: always;
+      }
+    }
+
+    .report-sheet {
+      max-width: 1040px;
+      margin: 2rem auto;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+      padding: 3rem;
+    }
+
+    .audit-stamp {
+      border: 2px dashed var(--accent-primary);
+      border-radius: 12px;
+      padding: 1.25rem;
+      background: rgba(59, 130, 246, 0.05);
+    }
+  </style>
+</head>
+<body class="bg-body-tertiary">
+
+  <!-- Floating Print & Navigation Toolbar (Hidden in Print) -->
+  <div class="no-print position-sticky top-0 z-3 py-3 px-4 bg-dark bg-opacity-75 backdrop-blur border-bottom border-secondary d-flex justify-content-between align-items-center shadow-sm">
+    <div class="d-flex align-items-center gap-2">
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-light btn-sm rounded-pill px-3">
+        <i class="bi bi-arrow-left me-1"></i> Return to Dashboard
+      </a>
+      <span class="text-muted small">|</span>
+      <span class="font-monospace small text-muted">ID: {{ audit_id }}</span>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <button onclick="window.print()" class="btn btn-primary btn-sm rounded-pill px-4 shadow-sm">
+        <i class="bi bi-printer me-1"></i> Print / Save as PDF
+      </button>
+    </div>
+  </div>
+
+  <div class="report-sheet">
+    <!-- Header Block -->
+    <div class="d-flex justify-content-between align-items-start border-bottom pb-4 mb-4">
+      <div>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <div class="brand-icon-box" style="width: 36px; height: 36px; font-size: 1.2rem;">
+            <i class="bi bi-diagram-3-fill"></i>
+          </div>
+          <span class="h4 fw-bold mb-0 tracking-wide">OBLIGRAPH</span>
+          <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-2">EXECUTIVE AUDIT</span>
+        </div>
+        <div class="text-muted small">Autonomous Obligation Intelligence & Predictive Compliance Report</div>
+      </div>
+
+      <div class="text-end">
+        <div class="font-monospace fw-bold small text-primary">{{ audit_id }}</div>
+        <div class="text-muted fs-xs mt-1">Generated: {{ audit_date }}</div>
+        <div class="badge bg-success-subtle text-success border border-success-subtle mt-2 font-monospace">
+          <i class="bi bi-shield-check me-1"></i>CRYPTO SEALED
+        </div>
+      </div>
+    </div>
+
+    <!-- Contract Scope Banner -->
+    <div class="p-3 rounded-3 mb-4 d-flex justify-content-between align-items-center" style="background: var(--bg-surface-elevated); border: 1px solid var(--border-color);">
+      <div>
+        <div class="text-muted fs-xs text-uppercase fw-bold">Target Agreement Scope</div>
+        <div class="h5 fw-bold mb-0 mt-1">
+          {% if contract %}
+            {{ contract.title }}
+          {% else %}
+            Full Enterprise Portfolio (All Contracts)
+          {% endif %}
+        </div>
+        {% if contract and contract.description %}
+        <div class="text-muted small mt-1">{{ contract.description }}</div>
+        {% endif %}
+      </div>
+      <div class="text-end">
+        <span class="badge bg-secondary-subtle text-muted border border-secondary-subtle font-monospace">
+          {{ total_obs }} Obligations Tracked
+        </span>
+      </div>
+    </div>
+
+    <!-- Executive KPI Grid -->
+    <div class="row g-3 mb-4">
+      <div class="col-sm-4">
+        <div class="card-modern p-3 text-center">
+          <div class="text-muted fs-xs text-uppercase fw-bold">Portfolio Compliance</div>
+          <div class="display-6 fw-bold text-success my-1">{{ compliance_pct }}%</div>
+          <div class="text-muted small">{{ compliant_obs }} / {{ total_obs }} Compliant</div>
+        </div>
+      </div>
+
+      <div class="col-sm-4">
+        <div class="card-modern p-3 text-center">
+          <div class="text-muted fs-xs text-uppercase fw-bold">Risk Exposure</div>
+          <div class="d-flex justify-content-center gap-3 my-2">
+            <div>
+              <div class="h5 fw-bold text-warning mb-0">{{ at_risk_obs }}</div>
+              <div class="fs-xs text-muted">At Risk</div>
+            </div>
+            <div>
+              <div class="h5 fw-bold text-danger mb-0">{{ violated_obs }}</div>
+              <div class="fs-xs text-muted">Violated</div>
+            </div>
+            <div>
+              <div class="h5 fw-bold text-muted mb-0">{{ pending_obs }}</div>
+              <div class="fs-xs text-muted">Pending</div>
+            </div>
+          </div>
+          <div class="text-muted fs-xs">
+            {% if violated_obs > 0 %}
+              <span class="text-danger fw-semibold">Action Required</span>
+            {% else %}
+              <span class="text-success fw-semibold">Acceptable Risk Profile</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-sm-4">
+        <div class="card-modern p-3 text-center">
+          <div class="text-muted fs-xs text-uppercase fw-bold">Ledger Block Height</div>
+          <div class="display-6 fw-bold text-primary my-1">#{{ chain_audit.total_blocks }}</div>
+          <div class="text-muted small">
+            {% if chain_audit.is_valid %}
+              <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Chain Verified</span>
+            {% else %}
+              <span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i>Integrity Compromised</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detailed Obligations Schedule -->
+    <div class="mb-4">
+      <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
+        <i class="bi bi-list-check text-primary"></i>
+        <span>Obligation Risk & Execution Matrix</span>
+      </h6>
+
+      <div class="table-responsive">
+        <table class="table-modern">
+          <thead>
+            <tr>
+              <th style="width: 50px;">ID</th>
+              <th>Clause & Details</th>
+              <th style="width: 130px;">Parties</th>
+              <th style="width: 120px;">Deadline</th>
+              <th style="width: 80px;">Conf.</th>
+              <th style="width: 90px;">Risk</th>
+              <th style="width: 100px;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for o in obligations %}
+            <tr class="row-risk-{{ o.risk_label | lower }}">
+              <td class="font-monospace text-muted small">#{{ o.id }}</td>
+              <td>
+                <div class="fw-semibold small">{{ o.clause_text }}</div>
+                {% if o.contract_title %}
+                <div class="text-muted fs-xs">{{ o.contract_title }}</div>
+                {% endif %}
+              </td>
+              <td class="small">
+                <div><span class="text-muted">From:</span> {{ o.actor }}</div>
+                <div><span class="text-muted">To:</span> {{ o.target_party }}</div>
+              </td>
+              <td class="small font-monospace">{{ o.deadline_date or o.trigger_deadline or 'On Demand' }}</td>
+              <td class="small font-monospace text-center">{{ o.confidence | round }}%</td>
+              <td>
+                <span class="badge-risk {{ o.risk_label | risk_badge }}">
+                  {{ o.risk_label }}
+                </span>
+              </td>
+              <td>
+                <span class="badge-status {{ o.status | status_badge }}">{{ o.status }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Cryptographic Proof Section -->
+    <div class="audit-stamp mb-4">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <h6 class="fw-bold mb-0 text-primary d-flex align-items-center gap-2">
+          <i class="bi bi-shield-shaded"></i>
+          <span>Cryptographic Hash-Chain Verification Certificate</span>
+        </h6>
+        <span class="badge bg-primary text-white font-monospace">SHA-256 LEDGER</span>
+      </div>
+      <p class="small text-muted mb-2">
+        Every escalation and verified breach is appended to an immutable, sequentially linked SHA-256 cryptographic chain.
+      </p>
+
+      <div class="row g-2 font-monospace fs-xs">
+        <div class="col-md-6">
+          <div class="p-2 rounded bg-dark border border-secondary text-truncate">
+            <span class="text-muted">Ledger Head Hash:</span><br>
+            <span class="text-info">{{ last_block.entry_hash if last_block else '0'*64 }}</span>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="p-2 rounded bg-dark border border-secondary text-truncate">
+            <span class="text-muted">Chain Audit Status:</span><br>
+            <span class="{{ 'text-success' if chain_audit.is_valid else 'text-danger' }}">
+              {{ '100% VALID - SEQUENTIALLY LINKED TO GENESIS' if chain_audit.is_valid else 'TAMPER WARNING DETECTED' }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sign-Off & Attestation Block -->
+    <div class="border-top pt-4 mt-5">
+      <div class="row g-4">
+        <div class="col-6">
+          <div class="text-muted fs-xs text-uppercase fw-bold mb-1">Chief Legal & Compliance Officer</div>
+          <div class="border-bottom border-secondary pb-4 mb-2">
+            <span class="fst-italic text-muted font-monospace small">Digitally Attested via OBLIGRAPH Engine</span>
+          </div>
+          <div class="d-flex justify-content-between text-muted fs-xs font-monospace">
+            <span>Name: ______________________</span>
+            <span>Date: ______________________</span>
+          </div>
+        </div>
+
+        <div class="col-6">
+          <div class="text-muted fs-xs text-uppercase fw-bold mb-1">Obligation Systems Auditor</div>
+          <div class="border-bottom border-secondary pb-4 mb-2">
+            <span class="fst-italic text-muted font-monospace small">Verification Stamp: {{ audit_id }}</span>
+          </div>
+          <div class="d-flex justify-content-between text-muted fs-xs font-monospace">
+            <span>Name: ______________________</span>
+            <span>Date: ______________________</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if auto_print %}
+  <script>
+    window.addEventListener("load", () => {
+      setTimeout(() => window.print(), 300);
+    });
+  </script>
+  {% endif %}
+</body>
+</html>

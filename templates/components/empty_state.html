@@ -1,0 +1,12 @@
+<div class="empty-state">
+  <div class="empty-state-icon">
+    <i class="bi {{ icon | default('bi-inbox') }}"></i>
+  </div>
+  <h4 class="empty-state-title">{{ title | default('No records found') }}</h4>
+  <p class="empty-state-desc">{{ description | default('Get started by adding or importing data into the system.') }}</p>
+  {% if action_url %}
+  <a href="{{ action_url }}" class="btn btn-primary px-4 py-2 rounded-pill shadow-sm">
+    <i class="bi bi-plus-lg me-1"></i> {{ action_label | default('Add New') }}
+  </a>
+  {% endif %}
+</div>

@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Review Extracted Obligations - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<form action="{{ url_for('contracts.save') }}" method="POST" id="reviewForm">
+  <div class="d-flex flex-column gap-4 max-w-5xl mx-auto">
+    <!-- Header with Action Buttons -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+      <div>
+        <div class="d-flex align-items-center gap-2">
+          <h2 class="h4 fw-bold mb-0">Review & Validate Extracted Obligations</h2>
+          <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill font-monospace" style="font-size: 0.75rem;">
+            STAGE 02
+          </span>
+        </div>
+        <p class="text-muted small mb-0 mt-1">
+          Review the six-field canonical records extracted by the LLM. You can edit any field or remove clauses before committing to the graph.
+        </p>
+      </div>
+      
+      <div class="d-flex align-items-center gap-2">
+        <a href="{{ url_for('contracts.upload') }}" class="btn btn-outline-secondary rounded-pill px-4">
+          Discard
+        </a>
+        <button type="submit" class="btn btn-primary rounded-pill px-5 shadow">
+          <i class="bi bi-check2-circle me-1"></i> Save & Ingest ({{ staging.records | length }}) Obligations
+        </button>
+      </div>
+    </div>
+
+    <!-- Contract Metadata Card -->
+    <div class="card-modern p-3 px-4">
+      <div class="row align-items-center g-3">
+        <div class="col-md-7">
+          <label class="text-muted fs-xs text-uppercase fw-bold">Document Title</label>
+          <div class="fw-bold fs-6">{{ staging.title }}</div>
+        </div>
+        <div class="col-md-5 d-flex align-items-center justify-content-md-end gap-2">
+          <span class="badge bg-secondary-subtle text-secondary font-monospace">
+            <i class="bi bi-file-earmark me-1"></i>{{ staging.filename }}
+          </span>
+          <span class="badge bg-success-subtle text-success border border-success-subtle">
+            <i class="bi bi-cpu me-1"></i>{{ staging.records | length }} Clauses Extracted
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Extracted Obligations Cards List -->
+    <div class="d-flex flex-column gap-3" id="clausesContainer">
+      {% for rec in staging.records %}
+      {% set idx = loop.index0 %}
+      <div class="card-modern clause-card" id="clause-card-{{ idx }}">
+        <input type="hidden" name="clause_index" value="{{ idx }}">
+        
+        <!-- Clause Card Header -->
+        <div class="card-header-modern bg-surface-elevated">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-primary font-monospace">#{{ loop.index }}</span>
+            <span class="fw-bold small text-primary">{{ rec.clause_ref }}</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-danger border-0" onclick="removeClauseCard('{{ idx }}')" title="Remove this clause">
+            <i class="bi bi-trash3"></i> <span class="d-none d-sm-inline">Remove</span>
+          </button>
+        </div>
+
+        <div class="card-body-modern p-4">
+          <!-- Original Clause Text -->
+          <div class="mb-3">
+            <label class="text-muted fs-xs fw-bold text-uppercase">Original Agreement Clause</label>
+            <textarea name="clause_text_{{ idx }}" class="form-control form-control-sm font-monospace text-muted" rows="2" style="background: var(--bg-surface-elevated);">{{ rec.clause_text }}</textarea>
+          </div>
+
+          <!-- Six Canonical Fields -->
+          <div class="row g-3">
+            <!-- 1. Actor -->
+            <div class="col-md-4">
+              <label class="form-label small fw-bold mb-1">
+                <i class="bi bi-person-badge text-primary me-1"></i>1. Obligated Actor
+              </label>
+              <input type="text" name="actor_{{ idx }}" class="form-control form-control-sm" value="{{ rec.actor }}" required>
+            </div>
+
+            <!-- 2. Trigger / Deadline -->
+            <div class="col-md-4">
+              <label class="form-label small fw-bold mb-1">
+                <i class="bi bi-clock-history text-primary me-1"></i>2. Trigger / Deadline
+              </label>
+              <input type="text" name="trigger_deadline_{{ idx }}" class="form-control form-control-sm" value="{{ rec.trigger_deadline }}" required>
+            </div>
+
+            <!-- 3. Required Evidence -->
+            <div class="col-md-4">
+              <label class="form-label small fw-bold mb-1">
+                <i class="bi bi-file-earmark-check text-primary me-1"></i>3. Required Evidence Format
+              </label>
+              <input type="text" name="required_evidence_{{ idx }}" class="form-control form-control-sm" value="{{ rec.required_evidence }}" required>
+            </div>
+
+            <!-- 4. Expected State -->
+            <div class="col-md-6">
+              <label class="form-label small fw-bold mb-1">
+                <i class="bi bi-bullseye text-success me-1"></i>4. Expected State / Requirement
+              </label>
+              <textarea name="expected_state_{{ idx }}" class="form-control form-control-sm" rows="2" required>{{ rec.expected_state }}</textarea>
+            </div>
+
+            <!-- 5. Violation Condition -->
+            <div class="col-md-6">
+              <label class="form-label small fw-bold mb-1">
+                <i class="bi bi-exclamation-octagon text-danger me-1"></i>5. Violation Condition
+              </label>
+              <textarea name="violation_condition_{{ idx }}" class="form-control form-control-sm" rows="2" required>{{ rec.violation_condition }}</textarea>
+            </div>
+
+            <!-- 6. Remediation Action -->
+            <div class="col-md-6">
+              <label class="form-label small fw-bold mb-1">
+                <i class="bi bi-arrow-counterclockwise text-warning me-1"></i>6. Remediation / Cure Action
+              </label>
+              <textarea name="remediation_action_{{ idx }}" class="form-control form-control-sm" rows="2" required>{{ rec.remediation_action }}</textarea>
+            </div>
+
+            <!-- Quantitative Parameters (Target, Unit, Deadline) -->
+            <div class="col-md-6">
+              <label class="form-label small fw-bold mb-1">
+                <i class="bi bi-speedometer text-info me-1"></i>Deterministic Target & Date
+              </label>
+              <div class="row g-2">
+                <div class="col-5">
+                  <input type="number" step="any" name="target_value_{{ idx }}" class="form-control form-control-sm font-monospace" placeholder="Target Value" value="{{ rec.target_value if rec.target_value is not none else '' }}">
+                </div>
+                <div class="col-3">
+                  <input type="text" name="unit_{{ idx }}" class="form-control form-control-sm font-monospace" placeholder="Unit (MT, %)" value="{{ rec.unit }}">
+                </div>
+                <div class="col-4">
+                  <input type="date" name="deadline_date_{{ idx }}" class="form-control form-control-sm font-monospace" value="{{ rec.deadline_date }}">
+                </div>
+              </div>
+              <div class="form-text fs-xs">Target value & date used for automated deviation & proximity scoring.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Bottom Action Bar -->
+    <div class="d-flex justify-content-between align-items-center py-4 border-top border-subtle">
+      <a href="{{ url_for('contracts.upload') }}" class="btn btn-outline-secondary rounded-pill px-4">
+        Cancel Extraction
+      </a>
+      <button type="submit" class="btn btn-primary btn-lg rounded-pill px-5 shadow">
+        <i class="bi bi-diagram-3-fill me-2"></i> Ingest All Obligations into Graph
+      </button>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function removeClauseCard(idx) {
+    const card = document.getElementById('clause-card-' + idx);
+    if (card) {
+      card.remove();
+      const count = document.querySelectorAll('.clause-card').length;
+      if (count === 0) {
+        document.getElementById('clausesContainer').innerHTML = `
+          <div class="p-5 text-center card-modern">
+            <i class="bi bi-journal-x display-6 text-muted mb-2 d-block"></i>
+            <div class="fw-bold">All extracted clauses removed</div>
+            <a href="{{ url_for('contracts.upload') }}" class="btn btn-outline-primary rounded-pill btn-sm mt-3">Re-upload Agreement</a>
+          </div>
+        `;
+      }
+    }
+  }
+</script>
+{% endblock %}

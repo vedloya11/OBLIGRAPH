@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+
+{% block title %}Evidence Connectors & Ingestion - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+  <!-- Page Header -->
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div>
+      <div class="d-flex align-items-center gap-2">
+        <h2 class="h4 fw-bold mb-0">Multi-Source Evidence Feeds & Trust Weighting</h2>
+        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill font-monospace" style="font-size: 0.75rem;">
+          STAGE 04
+        </span>
+      </div>
+      <p class="text-muted small mb-0 mt-1">
+        Ingest physical proof from email inboxes, live spreadsheets, and manual attestations with calibrated trust weights (0.4 - 1.0).
+      </p>
+    </div>
+
+    <!-- Top Action Buttons -->
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <!-- Sync All Button -->
+      <form action="{{ url_for('evidence.sync', source='all') }}" method="POST" class="d-inline">
+        <button type="submit" class="btn btn-outline-primary rounded-pill px-3 shadow-sm btn-sm d-inline-flex align-items-center gap-1">
+          <i class="bi bi-arrow-repeat"></i>
+          <span>Sync All Feeds</span>
+        </button>
+      </form>
+
+      <!-- Load Demo Evidence Button -->
+      <form action="{{ url_for('evidence.demo_seed') }}" method="POST" class="d-inline">
+        <button type="submit" class="btn btn-outline-success rounded-pill px-3 shadow-sm btn-sm d-inline-flex align-items-center gap-1">
+          <i class="bi bi-lightning-charge-fill text-warning"></i>
+          <span>Load Demo Evidence</span>
+        </button>
+      </form>
+
+      <!-- Add Manual Evidence Modal Trigger -->
+      <button class="btn btn-primary rounded-pill px-3 shadow-sm btn-sm d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#addEvidenceModal">
+        <i class="bi bi-plus-lg"></i>
+        <span>Add Evidence</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Three Connectors Status Cards Grid -->
+  <div class="row g-3">
+    <!-- Connector 1: IMAP Email Parser -->
+    <div class="col-md-4">
+      <div class="card-modern p-4 h-100 d-flex flex-column justify-content-between">
+        <div>
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div class="d-flex align-items-center gap-2">
+              <div class="stat-icon bg-primary-subtle text-primary">
+                <i class="bi bi-envelope-at"></i>
+              </div>
+              <div>
+                <h5 class="fw-bold mb-0 fs-6">IMAP Email Parser</h5>
+                <span class="text-muted fs-xs">Counterparty Mailbox</span>
+              </div>
+            </div>
+            <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+              Trust: {{ weights.counterparty_confirmed }}
+            </span>
+          </div>
+          <p class="text-muted small mt-2 mb-3">
+            Extracts volume quantities, shipping manifests (BOL), assay purity, and invoice numbers from counterparty delivery notifications.
+          </p>
+        </div>
+
+        <div class="pt-3 border-top border-subtle d-flex align-items-center justify-content-between">
+          <div class="fs-xs text-muted">
+            Last Synced: <strong class="text-reset">{{ email_last_sync }}</strong>
+          </div>
+          <form action="{{ url_for('evidence.sync', source='email') }}" method="POST">
+            <button type="submit" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+              <i class="bi bi-arrow-repeat me-1"></i> Sync Now
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connector 2: Google Sheets / CSV Feeds -->
+    <div class="col-md-4">
+      <div class="card-modern p-4 h-100 d-flex flex-column justify-content-between">
+        <div>
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div class="d-flex align-items-center gap-2">
+              <div class="stat-icon bg-success-subtle text-success">
+                <i class="bi bi-file-earmark-spreadsheet"></i>
+              </div>
+              <div>
+                <h5 class="fw-bold mb-0 fs-6">Google Sheets / CSV</h5>
+                <span class="text-muted fs-xs">Automated Telemetry</span>
+              </div>
+            </div>
+            <span class="badge bg-success-subtle text-success border border-success-subtle">
+              Trust: {{ weights.independently_verifiable }}
+            </span>
+          </div>
+          <p class="text-muted small mt-2 mb-3">
+            Syncs independent laboratory purity assay registers, IoT weighbridge scale telemetry, and ESG greenhouse gas emissions databases.
+          </p>
+        </div>
+
+        <div class="pt-3 border-top border-subtle d-flex align-items-center justify-content-between">
+          <div class="fs-xs text-muted">
+            Last Synced: <strong class="text-reset">{{ sheet_last_sync }}</strong>
+          </div>
+          <form action="{{ url_for('evidence.sync', source='sheet') }}" method="POST">
+            <button type="submit" class="btn btn-sm btn-outline-success rounded-pill px-3">
+              <i class="bi bi-arrow-repeat me-1"></i> Sync Now
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connector 3: Manual Attestation & Uploads -->
+    <div class="col-md-4">
+      <div class="card-modern p-4 h-100 d-flex flex-column justify-content-between">
+        <div>
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div class="d-flex align-items-center gap-2">
+              <div class="stat-icon bg-warning-subtle text-warning">
+                <i class="bi bi-person-check"></i>
+              </div>
+              <div>
+                <h5 class="fw-bold mb-0 fs-6">Manual Form Upload</h5>
+                <span class="text-muted fs-xs">Attestations & Declarations</span>
+              </div>
+            </div>
+            <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
+              Trust: {{ weights.self_reported }}
+            </span>
+          </div>
+          <p class="text-muted small mt-2 mb-3">
+            Direct party attestations, signed receiving reports, physical inspection certificates, and insurance renewal filings.
+          </p>
+        </div>
+
+        <div class="pt-3 border-top border-subtle d-flex align-items-center justify-content-between">
+          <div class="fs-xs text-muted">
+            Status: <span class="badge bg-success-subtle text-success">Active Form</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#addEvidenceModal">
+            <i class="bi bi-plus-circle me-1"></i> Submit Proof
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Correlated Evidence Table -->
+  <div class="card-modern">
+    <div class="card-header-modern">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-shield-check text-success fs-5"></i>
+        <h5 class="mb-0 fw-bold fs-6">Correlated Proof & Evidence Stream</h5>
+      </div>
+      <span class="badge bg-secondary-subtle text-secondary font-monospace">
+        {{ evidence | length }} ENTRIES
+      </span>
+    </div>
+    <div class="card-body-modern p-0">
+      {% if evidence %}
+      <div class="table-responsive">
+        <table class="table-modern">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Source Feed</th>
+              <th>Correlated Obligation</th>
+              <th>Trust Level & Weight</th>
+              <th>Observed Metric</th>
+              <th>Proof Description & Reference</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ev in evidence %}
+            <tr>
+              <td class="font-monospace text-muted small">#{{ ev.id }}</td>
+              <td>
+                {% if ev.source == 'email' %}
+                <span class="badge bg-primary-subtle text-primary d-inline-flex align-items-center gap-1 font-monospace">
+                  <i class="bi bi-envelope-at"></i> EMAIL
+                </span>
+                {% elif ev.source == 'sheet' %}
+                <span class="badge bg-success-subtle text-success d-inline-flex align-items-center gap-1 font-monospace">
+                  <i class="bi bi-file-earmark-spreadsheet"></i> SHEET / IOT
+                </span>
+                {% else %}
+                <span class="badge bg-warning-subtle text-warning d-inline-flex align-items-center gap-1 font-monospace">
+                  <i class="bi bi-person-check"></i> MANUAL
+                </span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('obligations.detail', obligation_id=ev.obligation_id) }}" class="text-decoration-none text-reset">
+                  <div class="fw-semibold text-truncate small" style="max-width: 240px;" title="{{ ev.clause_text }}">
+                    #{{ ev.obligation_id }} {{ ev.clause_text }}
+                  </div>
+                  <div class="text-muted fs-xs"><i class="bi bi-person me-1"></i>{{ ev.actor }}</div>
+                </a>
+              </td>
+              <td>
+                {% if ev.trust_level == 'independently_verifiable' %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle">
+                  <i class="bi bi-check-all me-1"></i>Independent ({{ ev.trust_weight }})
+                </span>
+                {% elif ev.trust_level == 'counterparty_confirmed' %}
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                  <i class="bi bi-check me-1"></i>Counterparty ({{ ev.trust_weight }})
+                </span>
+                {% else %}
+                <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
+                  <i class="bi bi-person me-1"></i>Self-Reported ({{ ev.trust_weight }})
+                </span>
+                {% endif %}
+              </td>
+              <td class="font-monospace small">
+                {% if ev.observed_value is not none %}
+                  <strong class="text-primary">{{ ev.observed_value }}</strong>
+                  <span class="text-muted fs-xs">{% if ev.target_value %}(target: {{ ev.target_value }} {{ ev.unit }}){% endif %}</span>
+                {% else %}
+                  <span class="text-muted">Attestation</span>
+                {% endif %}
+              </td>
+              <td class="small">
+                <div class="text-truncate" style="max-width: 300px;" title="{{ ev.description }}">
+                  {{ ev.description }}
+                </div>
+                {% if ev.raw_ref %}
+                <div class="text-muted fs-xs font-monospace mt-1">Ref: {{ ev.raw_ref }}</div>
+                {% endif %}
+              </td>
+              <td class="small text-muted font-monospace fs-xs">
+                {{ ev.created_at }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        {% set icon = 'bi-shield-check' %}
+        {% set title = 'No Correlated Evidence Yet' %}
+        {% set description = 'Sync your email feed, ingest Google Sheets telemetry, or submit manual proof to trigger automatic compliance scoring.' %}
+        {% set action_url = '#' %}
+        {% set action_label = 'Load Demo Evidence' %}
+        <div class="p-5 text-center">
+          <i class="bi bi-shield-check display-4 text-muted mb-3 d-block"></i>
+          <h5 class="fw-bold mb-1">No Correlated Evidence Yet</h5>
+          <p class="text-muted small mb-4">Click below to load sample multi-source evidence across all 3 source types.</p>
+          <form action="{{ url_for('evidence.demo_seed') }}" method="POST" class="d-inline">
+            <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">
+              <i class="bi bi-lightning-charge-fill me-1"></i> Load Demo Evidence
+            </button>
+          </form>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Manual Evidence Form -->
+<div class="modal fade" id="addEvidenceModal" tabindex="-1" aria-labelledby="addEvidenceModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content card-modern border-0">
+      <div class="modal-header border-bottom border-subtle">
+        <h5 class="modal-title fs-6 fw-bold" id="addEvidenceModalLabel">
+          <i class="bi bi-plus-circle text-primary me-2"></i>Register Evidence Record
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('evidence.add') }}" method="POST">
+        <div class="modal-body p-4 d-flex flex-column gap-3">
+          <!-- Obligation Selection -->
+          <div>
+            <label class="form-label small fw-bold">Correlated Contract Obligation</label>
+            <select name="obligation_id" class="form-select" required>
+              <option value="">Select obligation to verify...</option>
+              {% for ob in obligations %}
+              <option value="{{ ob.id }}">
+                #{{ ob.id }} ({{ ob.actor }}): {{ ob.clause_text[:50] }}... {% if ob.target_value %}[Target: {{ ob.target_value }} {{ ob.unit }}]{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text fs-xs">The compliance status of this obligation will be recomputed immediately.</div>
+          </div>
+
+          <div class="row g-3">
+            <!-- Source Selection -->
+            <div class="col-md-6">
+              <label class="form-label small fw-bold">Evidence Source Type</label>
+              <select name="source" id="evidenceSourceSelect" class="form-select" onchange="autoSelectTrustLevel()">
+                <option value="manual" selected>Manual Form / Attestation</option>
+                <option value="email">Counterparty Email (IMAP)</option>
+                <option value="sheet">Google Sheet / IoT Telemetry</option>
+              </select>
+            </div>
+
+            <!-- Trust Level Selection (with auto-assign & manual override) -->
+            <div class="col-md-6">
+              <label class="form-label small fw-bold">Trust Level &amp; Weight</label>
+              <select name="trust_level" id="evidenceTrustSelect" class="form-select">
+                <option value="self_reported" selected>Self-Reported (Weight: {{ weights.self_reported }})</option>
+                <option value="counterparty_confirmed">Counterparty Confirmed (Weight: {{ weights.counterparty_confirmed }})</option>
+                <option value="independently_verifiable">Independently Verifiable (Weight: {{ weights.independently_verifiable }})</option>
+              </select>
+              <div class="form-text fs-xs">Auto-assigned by source, with manual override option.</div>
+            </div>
+          </div>
+
+          <!-- Observed Numeric Metric -->
+          <div>
+            <label class="form-label small fw-bold">Observed Quantitative Value (Optional)</label>
+            <input type="number" step="any" name="observed_value" class="form-control font-monospace" placeholder="e.g. 4850 (Metric Tons) or 98.2 (%)">
+            <div class="form-text fs-xs">Leave blank if the evidence is qualitative attestation only.</div>
+          </div>
+
+          <!-- Description -->
+          <div>
+            <label class="form-label small fw-bold">Evidence Statement / Description</label>
+            <textarea name="description" class="form-control" rows="3" placeholder="Describe the physical proof, shipment manifest details, or inspection report..." required></textarea>
+          </div>
+
+          <!-- Raw Reference Identifier -->
+          <div>
+            <label class="form-label small fw-bold">Proof Identifier / Document Reference</label>
+            <input type="text" name="raw_ref" class="form-control font-monospace" placeholder="e.g. BOL-88492-ROTTERDAM or LAB-COA-NL-992.pdf">
+          </div>
+        </div>
+
+        <div class="modal-footer border-top border-subtle">
+          <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary rounded-pill px-4">
+            <i class="bi bi-shield-check me-1"></i> Register & Recompute
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function autoSelectTrustLevel() {
+    const src = document.getElementById('evidenceSourceSelect').value;
+    const trustSelect = document.getElementById('evidenceTrustSelect');
+    if (src === 'manual') {
+      trustSelect.value = 'self_reported';
+    } else if (src === 'email') {
+      trustSelect.value = 'counterparty_confirmed';
+    } else if (src === 'sheet') {
+      trustSelect.value = 'independently_verifiable';
+    }
+  }
+</script>
+{% endblock %}

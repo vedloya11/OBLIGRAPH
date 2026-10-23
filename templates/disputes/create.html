@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Lodge Counter-Evidence Dispute - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4 max-w-4xl mx-auto">
+  <!-- Header -->
+  <div class="d-flex align-items-center gap-3">
+    <a href="{{ url_for('disputes.index') }}" class="btn btn-icon shadow-sm">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+      <h2 class="h4 fw-bold mb-0">Lodge Counter-Evidence &amp; Dispute</h2>
+      <p class="text-muted small mb-0 mt-1">
+        Contract: <strong>{{ obligation.contract_title or 'Master Agreement' }}</strong> • Obligation #{{ obligation.id }}
+      </p>
+    </div>
+  </div>
+
+  <!-- Dispute Window Countdown Banner -->
+  <div class="p-3 rounded-4 border border-warning d-flex align-items-center justify-content-between" style="background: rgba(245, 158, 11, 0.1);">
+    <div class="d-flex align-items-center gap-3">
+      <div class="stat-icon bg-warning-subtle text-warning fs-4"><i class="bi bi-clock-history"></i></div>
+      <div>
+        <div class="fw-bold small text-warning">48-Hour Dispute Window Active</div>
+        <div class="text-muted fs-xs">
+          Submit verified counter-evidence before window expiry to prevent automatic hash-chain escalation.
+        </div>
+      </div>
+    </div>
+    <div class="text-end">
+      <div class="h5 fw-bold text-warning mb-0 font-monospace">
+        {{ hours_left }}h Left
+      </div>
+      <div class="text-muted fs-xs">Remaining</div>
+    </div>
+  </div>
+
+  <!-- Current Flagged Obligation State -->
+  <div class="card-modern p-4">
+    <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+      <span class="badge bg-primary font-monospace">OBLIGATION #{{ obligation.id }}</span>
+      <span class="badge-risk {{ obligation.risk_label | risk_badge }}">
+        {{ obligation.risk_label }} RISK ({{ obligation.risk_score | round(1) }})
+      </span>
+    </div>
+    <div class="mb-3">
+      <label class="text-muted fs-xs text-uppercase fw-bold">Clause Text</label>
+      <div class="fw-semibold">{{ obligation.clause_text }}</div>
+    </div>
+    <div class="row g-3 small">
+      <div class="col-md-6">
+        <span class="text-muted">Actor:</span> <strong>{{ obligation.actor }}</strong>
+      </div>
+      <div class="col-md-6">
+        <span class="text-muted">Target Requirement:</span> <strong>{{ obligation.expected_state }}</strong>
+        {% if obligation.target_value %}({{ obligation.target_value }} {{ obligation.unit }}){% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Challenged Evidence on Record -->
+  {% if evidence %}
+  <div class="card-modern">
+    <div class="card-header-modern">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-file-earmark-medical text-warning fs-5"></i>
+        <h5 class="mb-0 fw-bold fs-6">Challenged Evidence on Record</h5>
+      </div>
+    </div>
+    <div class="card-body-modern p-0">
+      <div class="table-responsive">
+        <table class="table-modern">
+          <thead>
+            <tr>
+              <th>Source &amp; Ref</th>
+              <th>Trust Level</th>
+              <th>Observed Metric</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ev in evidence %}
+            <tr>
+              <td class="font-monospace small">
+                <span class="badge bg-secondary-subtle text-reset">{{ ev.source | upper }}</span>
+                <span class="text-muted ms-1">{{ ev.raw_ref or '—' }}</span>
+              </td>
+              <td>
+                <span class="badge {{ ev.trust_level | trust_badge }}">
+                  {{ ev.trust_level | replace('_', ' ') | title }} ({{ ev.trust_weight }})
+                </span>
+              </td>
+              <td class="font-monospace fw-bold text-danger">
+                {% if ev.observed_value is not none %}{{ ev.observed_value }}{% else %}—{% endif %}
+              </td>
+              <td class="small">{{ ev.description }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Counter-Evidence Submission Form -->
+  <div class="card-modern">
+    <div class="card-header-modern">
+      <h5 class="mb-0 fw-bold fs-6"><i class="bi bi-pencil-square text-primary me-2"></i>Counter-Evidence Submission</h5>
+    </div>
+    <div class="card-body-modern p-4">
+      <form action="{{ url_for('disputes.submit') }}" method="POST">
+        <input type="hidden" name="obligation_id" value="{{ obligation.id }}">
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-bold">Submitted By</label>
+            <input type="text" name="submitted_by" class="form-control" placeholder="e.g. Apex Materials QA Inspection Team" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-bold">Submitting Party</label>
+            <select name="side" class="form-select">
+              <option value="obligated_party" selected>Obligated Party (Defending / Rebuttal)</option>
+              <option value="counterparty">Counterparty (Claimant)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-bold">Observed Counter-Metric (Optional)</label>
+            <input type="number" step="any" name="counter_value" class="form-control font-monospace" placeholder="e.g. 98.7 (purity) or 4980 (MT)">
+            <div class="form-text fs-xs">Provide actual verified physical metric to recompute deviation.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-bold">Attachment / Document Reference</label>
+            <input type="text" name="attachment" class="form-control font-monospace" placeholder="e.g. Accredited-Reassay-COA-NL8820.pdf">
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label small fw-bold">Counter-Evidence Statement &amp; Justification</label>
+          <textarea name="counter_evidence" class="form-control" rows="4" placeholder="Detail the grounds of dispute, calibration certificates, secondary weighbridge slips, or force majeure notices..." required></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center pt-2 border-top border-subtle">
+          <a href="{{ url_for('disputes.index') }}" class="btn btn-outline-secondary rounded-pill px-4">Cancel</a>
+          <button type="submit" class="btn btn-primary rounded-pill px-5 shadow">
+            <i class="bi bi-shield-check me-1"></i> Register Counter-Evidence &amp; Recompute
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
