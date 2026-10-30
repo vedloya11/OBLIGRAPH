@@ -178,3 +178,17 @@ def create_app(config_class=Config):
         start_scheduler(app)
 
     return app
+
+
+_wsgi_app = None
+
+
+def __getattr__(name):
+    """Support both `gunicorn run:app` and Render's default `gunicorn app:app`."""
+    global _wsgi_app
+    if name == "app":
+        if _wsgi_app is None:
+            _wsgi_app = create_app()
+        return _wsgi_app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
