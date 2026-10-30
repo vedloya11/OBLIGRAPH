@@ -22,6 +22,7 @@
   <!-- Query Input Card -->
   <div class="card-modern p-4">
     <form id="nlQueryForm" action="{{ url_for('query.index') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">
         <label class="form-label fw-bold small text-uppercase text-muted">Ask anything about your obligations</label>
         <div class="input-group input-group-lg shadow-sm">

@@ -1,0 +1,32 @@
+databases:
+  - name: obligraph-db
+    plan: free
+    databaseName: obligraph
+    user: obligraph
+
+services:
+  - type: web
+    name: obligraph
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn run:app --workers 1 --threads 4 --bind 0.0.0.0:$PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: obligraph-db
+          property: connectionString
+      - key: MOCK_LLM
+        value: "true"
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        value: ""
+      - key: ANTHROPIC_API_KEY
+        value: ""
+

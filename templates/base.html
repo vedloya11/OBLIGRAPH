@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}OBLIGRAPH - Autonomous Contract-to-Execution Obligation Graph Engine{% endblock %}</title>
   <meta name="description" content="Predictive compliance monitoring platform converting signed agreements into autonomous, trackable obligation graphs.">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   
   <!-- Favicon icon -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='25' fill='%233b82f6'/><path d='M30 50 L45 65 L70 35' stroke='white' stroke-width='10' fill='none' stroke-linecap='round'/></svg>">
@@ -83,9 +84,28 @@
           <i class="bi bi-sliders2"></i>
           <span>Engine Settings</span>
         </a>
+        {% if current_user.is_authenticated %}
+        <a href="{{ url_for('auth.account') }}" class="nav-link-modern {% if request.endpoint == 'auth.account' %}active{% endif %}">
+          <i class="bi bi-person-gear"></i>
+          <span>Account Settings</span>
+        </a>
+        {% endif %}
       </nav>
 
       <div class="sidebar-footer">
+        {% if current_user.is_authenticated %}
+        <div class="d-flex align-items-center justify-content-between p-2 rounded mb-2" style="background: var(--bg-surface-elevated);">
+          <div class="d-flex align-items-center gap-2 overflow-hidden">
+            <i class="bi bi-person-circle text-primary"></i>
+            <a href="{{ url_for('auth.account') }}" class="small fw-semibold text-truncate text-decoration-none text-reset" style="max-width: 115px;" title="{{ current_user.email }}">
+              {{ current_user.name }}
+            </a>
+          </div>
+          <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline-danger rounded-pill px-2 py-0 fs-xs" title="Log Out">
+            <i class="bi bi-box-arrow-right"></i> Logout
+          </a>
+        </div>
+        {% endif %}
         <div class="d-flex align-items-center justify-content-between p-2 rounded" style="background: var(--bg-surface-elevated);">
           <div class="d-flex align-items-center gap-2">
             <div class="contract-pulse"></div>
@@ -169,6 +189,24 @@
           <button id="themeToggleBtn" class="btn-icon" title="Toggle Theme" aria-label="Toggle dark/light theme">
             <i id="themeIcon" class="bi bi-moon-stars-fill text-warning"></i>
           </button>
+
+          {% if current_user.is_authenticated %}
+          <a href="{{ url_for('auth.account') }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3 d-none d-sm-inline-flex align-items-center gap-1" title="Account Settings">
+            <i class="bi bi-person-circle text-primary"></i>
+            <span class="text-truncate" style="max-width: 110px;">{{ current_user.name }}</span>
+          </a>
+          <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline-danger rounded-pill px-3 d-inline-flex align-items-center gap-1" title="Log Out">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="d-none d-md-inline">Logout</span>
+          </a>
+          {% else %}
+          <a href="{{ url_for('auth.login') }}" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+            Log in
+          </a>
+          <a href="{{ url_for('auth.signup') }}" class="btn btn-sm btn-primary rounded-pill px-3">
+            Sign up
+          </a>
+          {% endif %}
         </div>
       </header>
 

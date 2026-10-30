@@ -31,6 +31,7 @@
       </span>
       {% if dispute.status == 'open' %}
       <form action="{{ url_for('disputes.resolve', dispute_id=dispute.id) }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-success rounded-pill px-4 btn-sm shadow-sm">
           <i class="bi bi-check-lg me-1"></i> Accept &amp; Resolve
         </button>
@@ -191,6 +192,7 @@
       </a>
       {% if dispute.status == 'open' %}
       <form action="{{ url_for('disputes.resolve', dispute_id=dispute.id) }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-success rounded-pill px-4 shadow">
           <i class="bi bi-check2-circle me-1"></i> Accept &amp; Resolve Dispute
         </button>

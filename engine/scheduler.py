@@ -10,23 +10,33 @@ scheduler = None
 def check_deadlines_and_dispute_windows(db_path: str):
     """
     Background periodic job:
-    1. Recalculates deadline proximity and risk scores for active obligations.
-    2. Checks open dispute windows; expires windows if deadline has passed.
+    1. Recalculates deadline proximity and risk scores for active obligations per user.
+    2. Checks open dispute windows; expires windows if deadline has passed and records
+       to the owner user's isolated SHA-256 hash chain.
     """
     try:
         conn = get_db_connection(db_path)
-        thresh_high, _, _ = get_risk_thresholds()
         now = datetime.now(timezone.utc)
-        now_iso = now.isoformat()
 
-        obligations = conn.execute("SELECT id, dispute_deadline, risk_score, status FROM obligations").fetchall()
-        
+        obligations = conn.execute(
+            """
+            SELECT o.id, o.dispute_deadline, o.risk_score, o.status, COALESCE(c.user_id, 1) AS user_id
+            FROM obligations o
+            LEFT JOIN contracts c ON o.contract_id = c.id
+            """
+        ).fetchall()
+
+        user_thresholds = {}
         for ob in obligations:
             ob_id = ob["id"]
+            uid = int(ob["user_id"] or 1)
+            if uid not in user_thresholds:
+                user_thresholds[uid] = get_risk_thresholds(user_id=uid, db=conn)[0]
+            thresh_high = user_thresholds[uid]
             dispute_dl = ob["dispute_deadline"]
 
             # Check if dispute window has expired
-            if dispute_dl:
+            if dispute_dl and dispute_dl != "EXPIRED":
                 clean_dl = dispute_dl.replace("Z", "+00:00")
                 try:
                     dl_dt = datetime.fromisoformat(clean_dl)
@@ -35,7 +45,6 @@ def check_deadlines_and_dispute_windows(db_path: str):
 
                     if now > dl_dt:
                         # Window has expired!
-                        # Check open disputes for this obligation
                         open_dispute = conn.execute(
                             "SELECT id FROM disputes WHERE obligation_id = ? AND status = 'open'",
                             (ob_id,)
@@ -53,7 +62,7 @@ def check_deadlines_and_dispute_windows(db_path: str):
                                 "UPDATE obligations SET status = 'VIOLATED', dispute_deadline = 'EXPIRED' WHERE id = ?",
                                 (ob_id,)
                             )
-                            # Append to SHA-256 escalation blockchain ledger
+                            # Append to owner's SHA-256 escalation blockchain ledger
                             try:
                                 from engine.hash_chain import add_escalation_entry
                                 reason_msg = f"Dispute window expired without mitigation (Risk Score: {ob['risk_score']})"
@@ -61,7 +70,8 @@ def check_deadlines_and_dispute_windows(db_path: str):
                                     obligation_id=ob_id,
                                     reason=reason_msg,
                                     risk_score=ob["risk_score"],
-                                    db=conn
+                                    db=conn,
+                                    user_id=uid
                                 )
                             except Exception:
                                 pass
@@ -74,21 +84,25 @@ def check_deadlines_and_dispute_windows(db_path: str):
                 except Exception:
                     pass
 
-            # Periodically refresh metrics calculation
-            compute_obligation_metrics(ob_id, db=conn)
+            # Periodically refresh metrics calculation for this user's obligation
+            compute_obligation_metrics(ob_id, db=conn, user_id=uid)
 
         conn.close()
-    except Exception as e:
+    except Exception:
         # Background worker should not crash the main thread
         pass
 
 def start_scheduler(app):
-    """Initialize and start the background scheduler."""
+    """Initialize and start the background scheduler (guarded against duplicate Gunicorn workers)."""
     global scheduler
 
     # In development mode, Werkzeug runs two processes: parent and reload worker.
     # Only start scheduler in the reload worker or non-debug mode.
     if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        return
+
+    # Guard against duplicate scheduler threads if multiple workers are launched
+    if os.environ.get("DISABLE_SCHEDULER", "false").lower() == "true":
         return
 
     if scheduler is None:

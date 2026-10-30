@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Account Settings - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4 max-w-3xl mx-auto">
+  <div>
+    <h2 class="h4 fw-bold mb-1">Account &amp; Security Settings</h2>
+    <p class="text-muted small mb-0">Manage your profile identity and update your workspace password.</p>
+  </div>
+
+  <!-- Profile Update Card -->
+  <div class="card-modern p-4">
+    <h5 class="fw-bold mb-3 border-bottom pb-2 fs-6">
+      <i class="bi bi-person-circle text-primary me-2"></i>Profile Information
+    </h5>
+    <form action="{{ url_for('auth.account') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="profile">
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">Display Name</label>
+          <input type="text" name="name" class="form-control" value="{{ current_user.name }}" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">Email Address</label>
+          <input type="email" class="form-control text-muted" value="{{ current_user.email }}" disabled readonly>
+          <div class="form-text fs-xs">Unique workspace identifier (cannot be changed).</div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end">
+        <button type="submit" class="btn btn-primary px-4 btn-sm">
+          <i class="bi bi-check2 me-1"></i> Save Profile
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Password Update Card -->
+  <div class="card-modern p-4">
+    <h5 class="fw-bold mb-3 border-bottom pb-2 fs-6">
+      <i class="bi bi-shield-lock text-warning me-2"></i>Change Password
+    </h5>
+    <form action="{{ url_for('auth.account') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="password">
+
+      <div class="mb-3">
+        <label class="form-label small fw-bold">Current Password</label>
+        <input type="password" name="current_password" class="form-control" placeholder="Enter current password" required>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">New Password</label>
+          <input type="password" name="new_password" class="form-control" placeholder="Minimum 8 characters" minlength="8" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-bold">Confirm New Password</label>
+          <input type="password" name="confirm_password" class="form-control" placeholder="Repeat new password">
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end">
+        <button type="submit" class="btn btn-outline-warning px-4 btn-sm">
+          <i class="bi bi-key me-1"></i> Update Password
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+

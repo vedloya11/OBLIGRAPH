@@ -1,5 +1,25 @@
 // OBLIGRAPH Global Client Script
 
+// Automatically attach CSRF token to all state-changing fetch calls
+(function() {
+  const originalFetch = window.fetch;
+  if (!originalFetch) return;
+  window.fetch = function(input, init) {
+    init = init || {};
+    const method = (init.method || "GET").toUpperCase();
+    if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      if (meta && meta.content) {
+        init.headers = new Headers(init.headers || {});
+        if (!init.headers.has("X-CSRFToken")) {
+          init.headers.set("X-CSRFToken", meta.content);
+        }
+      }
+    }
+    return originalFetch.call(this, input, init);
+  };
+})();
+
 document.addEventListener("DOMContentLoaded", () => {
   initTheme();
   initSidebar();

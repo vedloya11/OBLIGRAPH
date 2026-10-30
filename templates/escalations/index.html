@@ -25,12 +25,14 @@
       </button>
 
       <form action="{{ url_for('escalations.repair') }}" method="POST" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-outline-warning btn-sm rounded-pill px-3 shadow-sm" title="Re-anchor hashes from Genesis block">
           <i class="bi bi-wrench me-1"></i> Repair Chain
         </button>
       </form>
 
       <form action="{{ url_for('escalations.verify') }}" method="POST" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-success btn-sm rounded-pill px-4 shadow-sm" id="btnVerifyChain">
           <i class="bi bi-shield-check me-1"></i> Verify Chain Integrity
         </button>
@@ -270,6 +272,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <form action="{{ url_for('escalations.tamper') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body p-4">
           <p class="small text-muted">
             This security test modifies a block's underlying database record directly <strong>without recomputing its SHA-256 hash</strong>. 
@@ -310,6 +313,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <form action="{{ url_for('escalations.create') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body p-4">
           <div class="mb-3">
             <label class="form-label small fw-bold">Select Obligation</label>

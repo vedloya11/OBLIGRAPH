@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from flask import current_app
-from app.database import get_db
+from app.database import get_db, get_db_connection, get_current_user_id
 
 FORBIDDEN_KEYWORDS = [
     r"\bINSERT\b", r"\bUPDATE\b", r"\bDELETE\b", r"\bDROP\b", r"\bALTER\b",
@@ -112,10 +112,14 @@ def translate_nl_to_sql(prompt: str) -> str:
 
     return generate_mock_sql(prompt)
 
-def execute_sandboxed_query(sql: str, db_path: str) -> Dict[str, Any]:
+def execute_sandboxed_query(sql: str, db_path: str = None, user_id: Optional[int] = None) -> Dict[str, Any]:
     """
-    Executes validated SQL query using a strictly read-only SQLite connection.
-    Guarantees no modifications occur even if complex SQL injection is attempted.
+    Executes validated SQL query inside a strictly read-only, per-user isolated
+    in-memory SQLite sandbox populated ONLY with the authenticated user's rows.
+    Guarantees:
+      1. No modifications can occur to the main database.
+      2. Cross-user data access is impossible because other users' rows and
+         sensitive tables (users, settings) do not exist in the sandbox.
     """
     validation = validate_and_sanitize_sql(sql)
     if not validation["valid"]:
@@ -131,26 +135,132 @@ def execute_sandboxed_query(sql: str, db_path: str) -> Dict[str, Any]:
     clean_sql = validation["sql"]
     start_time = time.perf_counter()
 
+    uid = user_id if user_id is not None else get_current_user_id(default=1)
+    uid = int(uid or 1)
+
     try:
-        # Use SQLite URI mode=ro for kernel-level read-only enforcement
-        resolved_path = Path(db_path).resolve().as_posix()
-        uri = f"file:{resolved_path}?mode=ro"
-        conn = sqlite3.connect(uri, uri=True)
-        conn.row_factory = sqlite3.Row
-        
-        cur = conn.cursor()
+        src_conn = get_db_connection(db_path)
+
+        # Fetch only the current user's records from the source database
+        contracts_rows = src_conn.execute(
+            "SELECT id, title, filename, raw_text, uploaded_at FROM contracts WHERE user_id = ?",
+            (uid,)
+        ).fetchall()
+        obligations_rows = src_conn.execute(
+            """
+            SELECT o.id, o.contract_id, o.clause_text, o.actor, o.trigger_deadline,
+                   o.required_evidence, o.expected_state, o.violation_condition,
+                   o.remediation_action, o.target_value, o.unit, o.deadline_date,
+                   o.status, o.confidence, o.risk_score, o.risk_label,
+                   o.dispute_deadline, o.updated_at
+            FROM obligations o
+            JOIN contracts c ON o.contract_id = c.id
+            WHERE c.user_id = ?
+            """,
+            (uid,)
+        ).fetchall()
+        dependencies_rows = src_conn.execute(
+            """
+            SELECT d.id, d.upstream_id, d.downstream_id, d.note
+            FROM dependencies d
+            JOIN obligations o ON d.upstream_id = o.id
+            JOIN contracts c ON o.contract_id = c.id
+            WHERE c.user_id = ?
+            """,
+            (uid,)
+        ).fetchall()
+        evidence_rows = src_conn.execute(
+            """
+            SELECT e.id, e.obligation_id, e.source, e.trust_level, e.trust_weight,
+                   e.observed_value, e.description, e.raw_ref, e.created_at
+            FROM evidence e
+            JOIN obligations o ON e.obligation_id = o.id
+            JOIN contracts c ON o.contract_id = c.id
+            WHERE c.user_id = ?
+            """,
+            (uid,)
+        ).fetchall()
+        disputes_rows = src_conn.execute(
+            """
+            SELECT d.id, d.obligation_id, d.submitted_by, d.side,
+                   d.counter_evidence, d.attachment, d.status, d.created_at
+            FROM disputes d
+            JOIN obligations o ON d.obligation_id = o.id
+            JOIN contracts c ON o.contract_id = c.id
+            WHERE c.user_id = ?
+            """,
+            (uid,)
+        ).fetchall()
+        escalations_rows = src_conn.execute(
+            """
+            SELECT id, obligation_id, risk_score, reason, created_at, prev_hash, entry_hash
+            FROM escalations
+            WHERE user_id = ?
+            """,
+            (uid,)
+        ).fetchall()
+        src_conn.close()
+
+        # Build isolated in-memory SQLite database containing ONLY this user's rows
+        sandbox = sqlite3.connect(":memory:")
+        sandbox.row_factory = sqlite3.Row
+        sandbox.executescript("""
+            CREATE TABLE contracts (id INTEGER PRIMARY KEY, title TEXT, filename TEXT, raw_text TEXT, created_at TIMESTAMP);
+            CREATE TABLE obligations (id INTEGER PRIMARY KEY, contract_id INTEGER, clause_text TEXT, actor TEXT, trigger_deadline TEXT, required_evidence TEXT, expected_state TEXT, violation_condition TEXT, remediation_action TEXT, target_value REAL, unit TEXT, deadline_date TEXT, status TEXT, confidence REAL, risk_score REAL, risk_label TEXT, dispute_deadline TEXT, updated_at TIMESTAMP);
+            CREATE TABLE dependencies (id INTEGER PRIMARY KEY, upstream_id INTEGER, downstream_id INTEGER, note TEXT);
+            CREATE TABLE evidence (id INTEGER PRIMARY KEY, obligation_id INTEGER, source TEXT, trust_level TEXT, trust_weight REAL, observed_value REAL, description TEXT, raw_ref TEXT, created_at TIMESTAMP);
+            CREATE TABLE disputes (id INTEGER PRIMARY KEY, obligation_id INTEGER, submitted_by TEXT, side TEXT, counter_evidence TEXT, attachment TEXT, status TEXT, created_at TIMESTAMP);
+            CREATE TABLE escalations (id INTEGER PRIMARY KEY, obligation_id INTEGER, risk_score REAL, reason TEXT, created_at TIMESTAMP, prev_hash TEXT, entry_hash TEXT);
+        """)
+
+        if contracts_rows:
+            sandbox.executemany(
+                "INSERT INTO contracts VALUES (?, ?, ?, ?, ?)",
+                [tuple(r) for r in contracts_rows]
+            )
+        if obligations_rows:
+            sandbox.executemany(
+                "INSERT INTO obligations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [tuple(r) for r in obligations_rows]
+            )
+        if dependencies_rows:
+            sandbox.executemany(
+                "INSERT INTO dependencies VALUES (?, ?, ?, ?)",
+                [tuple(r) for r in dependencies_rows]
+            )
+        if evidence_rows:
+            sandbox.executemany(
+                "INSERT INTO evidence VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [tuple(r) for r in evidence_rows]
+            )
+        if disputes_rows:
+            sandbox.executemany(
+                "INSERT INTO disputes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [tuple(r) for r in disputes_rows]
+            )
+        if escalations_rows:
+            sandbox.executemany(
+                "INSERT INTO escalations VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [tuple(r) for r in escalations_rows]
+            )
+        sandbox.commit()
+
+        # Lock the in-memory database to read-only before executing user SQL
+        sandbox.execute("PRAGMA query_only = ON;")
+
+        cur = sandbox.cursor()
         cur.execute(clean_sql)
-        
+
         # Limit to 100 rows to prevent browser freeze
         raw_rows = cur.fetchmany(100)
-        
+
         columns = [d[0] for d in cur.description] if cur.description else []
         rows = [list(r) for r in raw_rows]
-        
-        conn.close()
-        
+
+        sandbox.close()
+
         exec_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
-        
+
         return {
             "sql": clean_sql,
             "columns": columns,

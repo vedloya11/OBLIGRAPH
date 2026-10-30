@@ -7,22 +7,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import Config
-from app.database import get_db_connection, init_db
+from app.database import get_db_connection, init_db, get_current_user_id
 from engine.calculator import compute_obligation_metrics, recompute_all_obligations
 from engine.hash_chain import add_escalation_entry, verify_chain
 from engine.config_store import set_setting
 
-def load_demo_data(db_path: str = None) -> dict:
+def load_demo_data(db_path: str = None, user_id: int = None) -> dict:
     """
-    Reset and seed the complete canonical demo scenario for OBLIGRAPH.
-    Seeds:
+    Reset and seed the complete canonical demo scenario for a single user account.
+    Seeds (into THAT user's account only):
       1. Master Commercial Supply Agreement contract record.
       2. 10 canonical obligations with 6-field specifications.
       3. Upstream/downstream dependency links.
       4. Multi-channel evidence spanning Email, Google Sheet, and Manual Upload.
-      5. One deliberately violated obligation (Chemical Purity: 98.1% vs 98.5%).
+      5. One deliberately violated obligation (Chemical Purity: 96.8% vs 98.5%).
       6. One open counter-evidence dispute with 48h review window.
-      7. One sealed escalation block in the SHA-256 cryptographic ledger.
+      7. One sealed escalation block in the user's SHA-256 cryptographic ledger.
     """
     if db_path is None:
         try:
@@ -34,6 +34,8 @@ def load_demo_data(db_path: str = None) -> dict:
         except Exception:
             db_path = Config.DATABASE_PATH
 
+    uid = int(user_id) if user_id is not None else int(get_current_user_id(default=1) or 1)
+
     # Ensure schema exists
     init_db(db_path)
 
@@ -42,24 +44,32 @@ def load_demo_data(db_path: str = None) -> dict:
     now_str = now.strftime("%Y-%m-%d %H:%M:%S")
     today = datetime.date.today()
 
-    with conn:
-        # 1. Reset tables cleanly
-        conn.execute("DELETE FROM escalations")
-        conn.execute("DELETE FROM disputes")
-        conn.execute("DELETE FROM evidence")
-        conn.execute("DELETE FROM dependencies")
-        conn.execute("DELETE FROM obligations")
-        conn.execute("DELETE FROM contracts")
-        try:
-            conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('contracts', 'obligations', 'dependencies', 'evidence', 'disputes', 'escalations')")
-        except Exception:
-            pass
+    try:
+        # 1. Reset ONLY this user's records cleanly
+        conn.execute("DELETE FROM escalations WHERE user_id = ?", (uid,))
+        conn.execute(
+            "DELETE FROM disputes WHERE obligation_id IN (SELECT o.id FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ?)",
+            (uid,)
+        )
+        conn.execute(
+            "DELETE FROM evidence WHERE obligation_id IN (SELECT o.id FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ?)",
+            (uid,)
+        )
+        conn.execute(
+            "DELETE FROM dependencies WHERE upstream_id IN (SELECT o.id FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ?) OR downstream_id IN (SELECT o.id FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ?)",
+            (uid, uid)
+        )
+        conn.execute(
+            "DELETE FROM obligations WHERE contract_id IN (SELECT id FROM contracts WHERE user_id = ?)",
+            (uid,)
+        )
+        conn.execute("DELETE FROM contracts WHERE user_id = ?", (uid,))
+        conn.execute("DELETE FROM contract_stagings WHERE user_id = ?", (uid,))
 
-        # 2. Ingest Canonical Contract
+        # 2. Ingest Canonical Contract for this user
         contract_title = "Global Lithium & Chemical Materials Master Supply Agreement"
         filename = "demo_contract.pdf"
-        
-        # Read text from seed file if available
+
         pdf_path = Path(__file__).parent / "demo_contract.pdf"
         raw_text = "Master Commercial Supply Agreement between Apex Materials Ltd (Supplier) and Nexus Energy Corp (Buyer)."
         if pdf_path.exists():
@@ -71,8 +81,8 @@ def load_demo_data(db_path: str = None) -> dict:
                 pass
 
         cur = conn.execute(
-            "INSERT INTO contracts (title, filename, raw_text) VALUES (?, ?, ?)",
-            (contract_title, filename, raw_text)
+            "INSERT INTO contracts (user_id, title, filename, raw_text) VALUES (?, ?, ?, ?)",
+            (uid, contract_title, filename, raw_text)
         )
         contract_id = cur.lastrowid
 
@@ -82,7 +92,7 @@ def load_demo_data(db_path: str = None) -> dict:
         d_due_30 = (today + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
         d_due_45 = (today + datetime.timedelta(days=45)).strftime("%Y-%m-%d")
 
-        # 3. Insert 10 Canonical Obligations
+        # 3. Insert 10 Canonical Obligations and map 1..10 to actual DB IDs
         obligations_data = [
             (
                 contract_id,
@@ -216,30 +226,39 @@ def load_demo_data(db_path: str = None) -> dict:
             )
         ]
 
-        for ob in obligations_data:
-            conn.execute("""
+        ob_id_map = {}
+        for idx, ob in enumerate(obligations_data, start=1):
+            ob_cur = conn.execute("""
                 INSERT INTO obligations (
                     contract_id, clause_text, actor, trigger_deadline, required_evidence,
                     expected_state, violation_condition, remediation_action, target_value,
                     unit, deadline_date, status, confidence, risk_score, risk_label
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0.0, 0.0, 'LOW')
             """, ob)
+            ob_id_map[idx] = ob_cur.lastrowid
 
-        # 4. Insert Dependency Graph Links
-        # Link 1: Clause 2.2 (COA) is upstream for Clause 1.1 (Delivery Acceptance)
-        conn.execute("INSERT INTO dependencies (upstream_id, downstream_id, note) VALUES (4, 1, 'Accredited COA required before customs release and delivery acceptance')")
-        # Link 2: Clause 3.1 (30-day notice) is upstream for Clause 3.2 (Quarterly Cap)
-        conn.execute("INSERT INTO dependencies (upstream_id, downstream_id, note) VALUES (5, 6, '30-day formal notice must precede index adjustment cap calculation')")
-        # Link 3: Clause 1.2 (Packaging) is upstream for Clause 4.1 (Inspection)
-        conn.execute("INSERT INTO dependencies (upstream_id, downstream_id, note) VALUES (2, 7, 'Hazmat container integrity verifies receipt condition prior to final acceptance')")
-        # Link 4: Clause 1.1 (Delivery) is upstream for Clause 5.1 (Payment)
-        conn.execute("INSERT INTO dependencies (upstream_id, downstream_id, note) VALUES (1, 8, 'Satisfactory delivery BOL triggers Net 30 payment clock')")
+        # 4. Insert Dependency Graph Links using mapped obligation IDs
+        conn.execute(
+            "INSERT INTO dependencies (upstream_id, downstream_id, note) VALUES (?, ?, ?)",
+            (ob_id_map[4], ob_id_map[1], 'Accredited COA required before customs release and delivery acceptance')
+        )
+        conn.execute(
+            "INSERT INTO dependencies (upstream_id, downstream_id, note) VALUES (?, ?, ?)",
+            (ob_id_map[5], ob_id_map[6], '30-day formal notice must precede index adjustment cap calculation')
+        )
+        conn.execute(
+            "INSERT INTO dependencies (upstream_id, downstream_id, note) VALUES (?, ?, ?)",
+            (ob_id_map[2], ob_id_map[7], 'Hazmat container integrity verifies receipt condition prior to final acceptance')
+        )
+        conn.execute(
+            "INSERT INTO dependencies (upstream_id, downstream_id, note) VALUES (?, ?, ?)",
+            (ob_id_map[1], ob_id_map[8], 'Satisfactory delivery BOL triggers Net 30 payment clock')
+        )
 
         # 5. Insert Multi-Channel Evidence spanning all 3 sources
         evidence_records = [
-            # Channel 1: Email IMAP parser (Counterparty Confirmed, 0.70 weight)
             (
-                1,
+                ob_id_map[1],
                 "email",
                 "counterparty_confirmed",
                 0.70,
@@ -247,9 +266,8 @@ def load_demo_data(db_path: str = None) -> dict:
                 "Inbound freight manifest BOL-88492: 4,850 MT arrived Rotterdam Berth 3 (150 MT short of 5,000 MT target)",
                 "EMAIL: logistics@apexmaterials.com - BOL #88492-APEX"
             ),
-            # Channel 2: Google Sheet / ERP feed (Independently Verifiable, 1.00 weight) -> DELIBERATE VIOLATION
             (
-                3,
+                ob_id_map[3],
                 "sheet",
                 "independently_verifiable",
                 1.00,
@@ -257,9 +275,8 @@ def load_demo_data(db_path: str = None) -> dict:
                 "Accredited Lab Assay Report #COA-992: Purity measured 96.8% Li2CO3 — Batch rejected for chemical purity breach below 98.5% contract standard",
                 "SHEET: Lab Assay Feed - Row #142 (Port Berth Chemical Lab Assay #LB-992)"
             ),
-            # Channel 3: Manual Upload (Self-Reported, 0.40 weight) -> COMPLIANT
             (
-                5,
+                ob_id_map[5],
                 "manual",
                 "self_reported",
                 0.40,
@@ -267,9 +284,8 @@ def load_demo_data(db_path: str = None) -> dict:
                 "Registered mail confirmation letter: 30-day notice served to Nexus procurement desk",
                 "UPLOAD: Notice_Letter_Q4_Price.pdf (Tracking #NL-4492-REG)"
             ),
-            # Channel 2: Google Sheet feed (Independently Verifiable, 1.00 weight) -> COMPLIANT
             (
-                2,
+                ob_id_map[2],
                 "sheet",
                 "independently_verifiable",
                 1.00,
@@ -277,9 +293,8 @@ def load_demo_data(db_path: str = None) -> dict:
                 "Port Hazmat Authority Container Certificate #HZ-402: UN-approved drums inspected, seals intact",
                 "SHEET: Hazmat Clearance Log - Berth 3 Container #CT-889"
             ),
-            # Channel 2: Google Sheet feed (Independently Verifiable, 1.00 weight) -> COMPLIANT
             (
-                9,
+                ob_id_map[9],
                 "sheet",
                 "independently_verifiable",
                 1.00,
@@ -287,9 +302,8 @@ def load_demo_data(db_path: str = None) -> dict:
                 "ISO 14064 Greenhouse Gas Emissions Verification Audit: 2.10 kg CO2e/kg recorded (Compliant under 2.4 limit)",
                 "SHEET: ESG & Carbon Audit 2026 - Third-Party Certifier Bureau Veritas"
             ),
-            # Channel 3: Manual Upload (Independently Verifiable, 1.00 weight) -> COMPLIANT
             (
-                10,
+                ob_id_map[10],
                 "manual",
                 "independently_verifiable",
                 1.00,
@@ -310,7 +324,7 @@ def load_demo_data(db_path: str = None) -> dict:
             INSERT INTO disputes (obligation_id, submitted_by, side, counter_evidence, attachment, status, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
-            3,
+            ob_id_map[3],
             "Apex Materials QA Director",
             "obligated_party",
             "Secondary split-sample assay conducted by SGS Minerals International on Retain Sample #LOT-2026-092 confirmed 98.62% Li2CO3 purity. Primary titration was calibrated on an unpurged argon baseline. Formal request for mutual umpire laboratory arbitration under Section 4.3 submitted.",
@@ -319,25 +333,37 @@ def load_demo_data(db_path: str = None) -> dict:
             now_str
         ))
 
-        # 7. Recompute all obligations deterministically
-        recompute_all_obligations(db=conn)
+        conn.commit()
 
-        # 8. Add sealed escalation entry to SHA-256 hash chain
+        # 7. Recompute all obligations deterministically for this user
+        recompute_all_obligations(db=conn, user_id=uid)
+
+        # 8. Add sealed escalation entry to this user's SHA-256 hash chain
         add_escalation_entry(
-            obligation_id=1,
+            obligation_id=ob_id_map[1],
             reason="Uncured monthly delivery volume shortfall of 150 MT under Clause 1.1 beyond 5-day grace window; priority freight not dispatched.",
             risk_score=84.5,
-            db=conn
+            db=conn,
+            user_id=uid
         )
-        # Update settings to point to this active contract
-        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('active_contract_id', ?)", (str(contract_id),))
+        # Update settings for this user to point to this active contract
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (user_id, key, value) VALUES (?, 'active_contract_id', ?)",
+            (uid, str(contract_id))
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        conn.close()
+        raise
 
-    # 9. Verify cryptographic ledger
-    audit = verify_chain(conn)
+    # 9. Verify cryptographic ledger for this user
+    audit = verify_chain(conn, user_id=uid)
     conn.close()
 
     summary = {
         "status": "success",
+        "user_id": uid,
         "contract_id": contract_id,
         "contract_title": contract_title,
         "obligations_count": len(obligations_data),

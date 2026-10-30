@@ -22,6 +22,7 @@
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <!-- Sync All Button -->
       <form action="{{ url_for('evidence.sync', source='all') }}" method="POST" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-outline-primary rounded-pill px-3 shadow-sm btn-sm d-inline-flex align-items-center gap-1">
           <i class="bi bi-arrow-repeat"></i>
           <span>Sync All Feeds</span>
@@ -30,6 +31,7 @@
 
       <!-- Load Demo Evidence Button -->
       <form action="{{ url_for('evidence.demo_seed') }}" method="POST" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-outline-success rounded-pill px-3 shadow-sm btn-sm d-inline-flex align-items-center gap-1">
           <i class="bi bi-lightning-charge-fill text-warning"></i>
           <span>Load Demo Evidence</span>
@@ -74,6 +76,7 @@
             Last Synced: <strong class="text-reset">{{ email_last_sync }}</strong>
           </div>
           <form action="{{ url_for('evidence.sync', source='email') }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-sm btn-outline-primary rounded-pill px-3">
               <i class="bi bi-arrow-repeat me-1"></i> Sync Now
             </button>
@@ -110,6 +113,7 @@
             Last Synced: <strong class="text-reset">{{ sheet_last_sync }}</strong>
           </div>
           <form action="{{ url_for('evidence.sync', source='sheet') }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-sm btn-outline-success rounded-pill px-3">
               <i class="bi bi-arrow-repeat me-1"></i> Sync Now
             </button>
@@ -256,6 +260,7 @@
           <h5 class="fw-bold mb-1">No Correlated Evidence Yet</h5>
           <p class="text-muted small mb-4">Click below to load sample multi-source evidence across all 3 source types.</p>
           <form action="{{ url_for('evidence.demo_seed') }}" method="POST" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">
               <i class="bi bi-lightning-charge-fill me-1"></i> Load Demo Evidence
             </button>
@@ -277,6 +282,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <form action="{{ url_for('evidence.add') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body p-4 d-flex flex-column gap-3">
           <!-- Obligation Selection -->
           <div>

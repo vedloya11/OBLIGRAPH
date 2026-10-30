@@ -2,23 +2,32 @@ import re
 import csv
 import io
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 import requests
 from config import Config
 from engine.config_store import get_setting, set_setting
 from engine.calculator import get_trust_weights, compute_obligation_metrics
+from app.database import get_current_user_id
 
-# Source to default trust level mapping
 DEFAULT_SOURCE_TRUST = {
     "manual": "self_reported",
     "email": "counterparty_confirmed",
     "sheet": "independently_verifiable"
 }
 
-def get_trust_weight_for_level(trust_level: str) -> float:
+
+def _resolve_uid(user_id: Optional[int] = None) -> int:
+    if user_id is not None:
+        return int(user_id)
+    uid = get_current_user_id(default=1)
+    return int(uid) if uid is not None else 1
+
+
+def get_trust_weight_for_level(trust_level: str, user_id: Optional[int] = None, db=None) -> float:
     """Return numeric trust weight based on trust level."""
-    weights = get_trust_weights()
+    weights = get_trust_weights(user_id=user_id, db=db)
     return weights.get(trust_level, 0.4)
+
 
 def parse_email_text(raw_body: str) -> Dict[str, Any]:
     """
@@ -27,7 +36,6 @@ def parse_email_text(raw_body: str) -> Dict[str, Any]:
     """
     extracted: Dict[str, Any] = {}
 
-    # 1. Quantity / Metric Tons extraction
     qty_match = re.search(r'(\d[\d,\.]*)\s*(?:metric tons?|MT|tons?|units?)\b', raw_body, re.IGNORECASE)
     if qty_match:
         val_str = qty_match.group(1).replace(",", "")
@@ -36,7 +44,6 @@ def parse_email_text(raw_body: str) -> Dict[str, Any]:
         except ValueError:
             pass
 
-    # 2. Purity percentage extraction
     purity_match = re.search(r'(\d{1,2}(?:\.\d+)?)\s*%\s*(?:purity|assay|Li2CO3)?\b', raw_body, re.IGNORECASE)
     if purity_match:
         try:
@@ -44,35 +51,32 @@ def parse_email_text(raw_body: str) -> Dict[str, Any]:
         except ValueError:
             pass
 
-    # 3. Invoice Number
     inv_match = re.search(r'(?:invoice|inv)\s*[:#\s]?\s*([A-Z0-9\-]+)', raw_body, re.IGNORECASE)
     if inv_match:
         extracted["invoice_number"] = inv_match.group(1)
 
-    # 4. Bill of Lading / Manifest reference
     bol_match = re.search(r'(?:bill of lading|bol|b/l)\s*[:#\s]?\s*([A-Z0-9\-]+)', raw_body, re.IGNORECASE)
     if bol_match:
         extracted["bol"] = bol_match.group(1)
 
-    # 5. Date
     date_match = re.search(r'\b(202\d-[01]\d-[0-3]\d)\b', raw_body)
     if date_match:
         extracted["date"] = date_match.group(1)
 
     return extracted
 
-def sync_imap_emails(db) -> Dict[str, Any]:
+
+def sync_imap_emails(db, user_id: Optional[int] = None) -> Dict[str, Any]:
     """
-    Sync delivery notices and invoices from IMAP mailbox.
-    If IMAP credentials are not configured, uses simulated counterparty email messages.
+    Sync delivery notices and invoices from IMAP mailbox for the current user's obligations.
     """
-    host = get_setting("imap_host", Config.IMAP_HOST)
-    user = get_setting("imap_user", Config.IMAP_USER)
-    password = get_setting("imap_pass", Config.IMAP_PASS)
+    uid = _resolve_uid(user_id)
+    host = get_setting("imap_host", Config.IMAP_HOST, user_id=uid, db=db)
+    user = get_setting("imap_user", Config.IMAP_USER, user_id=uid, db=db)
+    password = get_setting("imap_pass", Config.IMAP_PASS, user_id=uid, db=db)
 
     emails_processed = []
 
-    # If live IMAP is configured
     if host and user and password:
         try:
             import imaplib
@@ -85,7 +89,7 @@ def sync_imap_emails(db) -> Dict[str, Any]:
 
             status, messages = mail.search(None, 'ALL')
             if status == "OK":
-                for num in messages[0].split()[-10:]:  # Last 10 emails
+                for num in messages[0].split()[-10:]:
                     res, msg_data = mail.fetch(num, '(RFC822)')
                     for response_part in msg_data:
                         if isinstance(response_part, tuple):
@@ -108,11 +112,9 @@ def sync_imap_emails(db) -> Dict[str, Any]:
                             })
             mail.close()
             mail.logout()
-        except Exception as e:
-            # Fall back to simulated email feed
+        except Exception:
             pass
 
-    # Simulated realistic email feed (if offline or live mailbox returned no items)
     if not emails_processed:
         emails_processed = [
             {
@@ -132,34 +134,46 @@ def sync_imap_emails(db) -> Dict[str, Any]:
             }
         ]
 
-    # Map parsed emails to active obligations
     inserted_count = 0
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     for mail_item in emails_processed:
         extracted = parse_email_text(mail_item["body"])
-        
-        # Match obligation
         matched_ob_id = None
         obs_value = None
         desc = f"Email from {mail_item['sender']}: {mail_item['subject']}"
 
         if "quantity" in extracted:
-            row = db.execute("SELECT id FROM obligations WHERE clause_text LIKE '%volume%' OR clause_text LIKE '%deliver%' LIMIT 1").fetchone()
+            row = db.execute("""
+                SELECT o.id FROM obligations o
+                JOIN contracts c ON o.contract_id = c.id
+                WHERE c.user_id = ? AND (o.clause_text LIKE '%volume%' OR o.clause_text LIKE '%deliver%')
+                LIMIT 1
+            """, (uid,)).fetchone()
             if row:
                 matched_ob_id = row["id"]
                 obs_value = extracted["quantity"]
                 desc += f" [Extracted Volume: {obs_value} MT, BOL: {extracted.get('bol', 'N/A')}]"
 
         elif "purity" in extracted:
-            row = db.execute("SELECT id FROM obligations WHERE clause_text LIKE '%purity%' OR clause_text LIKE '%quality%' LIMIT 1").fetchone()
+            row = db.execute("""
+                SELECT o.id FROM obligations o
+                JOIN contracts c ON o.contract_id = c.id
+                WHERE c.user_id = ? AND (o.clause_text LIKE '%purity%' OR o.clause_text LIKE '%quality%')
+                LIMIT 1
+            """, (uid,)).fetchone()
             if row:
                 matched_ob_id = row["id"]
                 obs_value = extracted["purity"]
                 desc += f" [Extracted Chemical Purity: {obs_value}%]"
 
         elif "notice" in mail_item["subject"].lower():
-            row = db.execute("SELECT id FROM obligations WHERE clause_text LIKE '%price%' AND clause_text LIKE '%notice%' LIMIT 1").fetchone()
+            row = db.execute("""
+                SELECT o.id FROM obligations o
+                JOIN contracts c ON o.contract_id = c.id
+                WHERE c.user_id = ? AND o.clause_text LIKE '%price%' AND o.clause_text LIKE '%notice%'
+                LIMIT 1
+            """, (uid,)).fetchone()
             if row:
                 matched_ob_id = row["id"]
                 obs_value = 30.0
@@ -167,7 +181,7 @@ def sync_imap_emails(db) -> Dict[str, Any]:
 
         if matched_ob_id:
             trust_level = "counterparty_confirmed"
-            trust_weight = get_trust_weight_for_level(trust_level)
+            trust_weight = get_trust_weight_for_level(trust_level, user_id=uid, db=db)
 
             db.execute("""
                 INSERT INTO evidence (
@@ -176,11 +190,11 @@ def sync_imap_emails(db) -> Dict[str, Any]:
                 ) VALUES (?, 'email', ?, ?, ?, ?, ?, ?)
             """, (matched_ob_id, trust_level, trust_weight, obs_value, desc, mail_item["body"][:200], now_str))
 
-            compute_obligation_metrics(matched_ob_id, db=db)
+            compute_obligation_metrics(matched_ob_id, db=db, user_id=uid)
             inserted_count += 1
 
     db.commit()
-    set_setting("email_sync_last", now_str)
+    set_setting("email_sync_last", now_str, user_id=uid, db=db)
 
     return {
         "status": "success",
@@ -190,11 +204,13 @@ def sync_imap_emails(db) -> Dict[str, Any]:
         "timestamp": now_str
     }
 
-def sync_google_sheets(db) -> Dict[str, Any]:
+
+def sync_google_sheets(db, user_id: Optional[int] = None) -> Dict[str, Any]:
     """
-    Sync evidence records from published Google Sheet CSV or external IoT feed.
+    Sync evidence records from published Google Sheet CSV or external IoT feed for current user.
     """
-    csv_url = get_setting("google_sheet_csv_url", Config.GOOGLE_SHEET_CSV_URL)
+    uid = _resolve_uid(user_id)
+    csv_url = get_setting("google_sheet_csv_url", Config.GOOGLE_SHEET_CSV_URL, user_id=uid, db=db)
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     rows_parsed = []
 
@@ -209,7 +225,6 @@ def sync_google_sheets(db) -> Dict[str, Any]:
         except Exception:
             pass
 
-    # Simulated IoT / Telemetry CSV rows if offline or URL unconfigured
     if not rows_parsed:
         rows_parsed = [
             {
@@ -240,7 +255,7 @@ def sync_google_sheets(db) -> Dict[str, Any]:
 
     inserted_count = 0
     trust_level = "independently_verifiable"
-    trust_weight = get_trust_weight_for_level(trust_level)
+    trust_weight = get_trust_weight_for_level(trust_level, user_id=uid, db=db)
 
     for item in rows_parsed:
         kw = item.get("obligation_keyword", "").lower()
@@ -248,11 +263,12 @@ def sync_google_sheets(db) -> Dict[str, Any]:
         val = float(val_str) if val_str else None
         desc = item.get("description", "Telemetry record from external automated sensor feed")
 
-        # Find matching obligation
-        ob_row = db.execute(
-            f"SELECT id FROM obligations WHERE clause_text LIKE ? LIMIT 1",
-            (f"%{kw}%",)
-        ).fetchone()
+        ob_row = db.execute("""
+            SELECT o.id FROM obligations o
+            JOIN contracts c ON o.contract_id = c.id
+            WHERE c.user_id = ? AND o.clause_text LIKE ?
+            LIMIT 1
+        """, (uid, f"%{kw}%")).fetchone()
 
         if ob_row:
             ob_id = ob_row["id"]
@@ -263,11 +279,11 @@ def sync_google_sheets(db) -> Dict[str, Any]:
                 ) VALUES (?, 'sheet', ?, ?, ?, ?, ?, ?)
             """, (ob_id, trust_level, trust_weight, val, desc, f"Sensor/Row ID: {item.get('sensor_id', 'CSV-SYNC')}", now_str))
 
-            compute_obligation_metrics(ob_id, db=db)
+            compute_obligation_metrics(ob_id, db=db, user_id=uid)
             inserted_count += 1
 
     db.commit()
-    set_setting("sheet_sync_last", now_str)
+    set_setting("sheet_sync_last", now_str, user_id=uid, db=db)
 
     return {
         "status": "success",
@@ -277,6 +293,7 @@ def sync_google_sheets(db) -> Dict[str, Any]:
         "timestamp": now_str
     }
 
+
 def add_manual_evidence(
     db,
     obligation_id: int,
@@ -284,11 +301,13 @@ def add_manual_evidence(
     description: str,
     trust_level: str = "self_reported",
     source: str = "manual",
-    raw_ref: str = ""
+    raw_ref: str = "",
+    user_id: Optional[int] = None
 ) -> int:
     """Manually insert an evidence entry and trigger recalculation."""
+    uid = _resolve_uid(user_id)
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    trust_weight = get_trust_weight_for_level(trust_level)
+    trust_weight = get_trust_weight_for_level(trust_level, user_id=uid, db=db)
 
     cur = db.execute("""
         INSERT INTO evidence (
@@ -296,23 +315,30 @@ def add_manual_evidence(
             observed_value, description, raw_ref, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (obligation_id, source, trust_level, trust_weight, observed_value, description, raw_ref, now_str))
-    
+
     evidence_id = cur.lastrowid
     db.commit()
 
-    # Recompute metrics for this obligation
-    compute_obligation_metrics(obligation_id, db=db)
+    compute_obligation_metrics(obligation_id, db=db, user_id=uid)
     return evidence_id
 
-def seed_demo_evidence_set(db) -> int:
+
+def seed_demo_evidence_set(db, user_id: Optional[int] = None) -> int:
     """
     Seed a comprehensive offline evidence set spanning all three sources
-    and all three trust levels, deliberately creating one at-risk and one violated state.
+    and all three trust levels for the current user's obligations.
     """
+    uid = _resolve_uid(user_id)
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    weights = get_trust_weights()
+    weights = get_trust_weights(user_id=uid, db=db)
 
-    obligations = db.execute("SELECT id, clause_text, target_value FROM obligations ORDER BY id ASC").fetchall()
+    obligations = db.execute("""
+        SELECT o.id, o.clause_text, o.target_value
+        FROM obligations o
+        JOIN contracts c ON o.contract_id = c.id
+        WHERE c.user_id = ?
+        ORDER BY o.id ASC
+    """, (uid,)).fetchall()
     if not obligations:
         return 0
 
@@ -320,58 +346,52 @@ def seed_demo_evidence_set(db) -> int:
     for ob in obligations:
         txt = ob["clause_text"].lower()
 
-        # 1. Delivery volume: Deliver 4,850 MT (slight shortfall below 5000) via counterparty email
         if "volume" in txt or "5,000" in txt or "delivery" in txt:
             db.execute("""
                 INSERT INTO evidence (obligation_id, source, trust_level, trust_weight, observed_value, description, raw_ref, created_at)
                 VALUES (?, 'email', 'counterparty_confirmed', ?, 4850.0, 'Inbound freight manifest BOL-88492: 4,850 MT arrived Rotterdam Berth 3', 'BOL-88492-APEX', ?)
             """, (ob["id"], weights["counterparty_confirmed"], now_str))
-            compute_obligation_metrics(ob["id"], db=db)
+            compute_obligation_metrics(ob["id"], db=db, user_id=uid)
             inserted_count += 1
 
-        # 2. Chemical Purity: 98.1% (deliberate violation below 98.5% threshold) via independent lab sheet
         elif "purity" in txt or "98.5" in txt or "quality" in txt:
             db.execute("""
                 INSERT INTO evidence (obligation_id, source, trust_level, trust_weight, observed_value, description, raw_ref, created_at)
                 VALUES (?, 'sheet', 'independently_verifiable', ?, 98.1, 'Accredited Lab Assay Report #COA-992: Purity measured 98.1% Li2CO3 (Standard requirement: >= 98.5%)', 'LAB-COA-992.pdf', ?)
             """, (ob["id"], weights["independently_verifiable"], now_str))
-            compute_obligation_metrics(ob["id"], db=db)
+            compute_obligation_metrics(ob["id"], db=db, user_id=uid)
             inserted_count += 1
 
-        # 3. 30-Day Price Notice: Self-reported manual submission with notice letter
         elif "price" in txt and "notice" in txt:
             db.execute("""
                 INSERT INTO evidence (obligation_id, source, trust_level, trust_weight, observed_value, description, raw_ref, created_at)
                 VALUES (?, 'manual', 'self_reported', ?, 30.0, 'Registered mail confirmation letter: 30-day notice served to Nexus procurement desk', 'REG-MAIL-TRACK-449', ?)
             """, (ob["id"], weights["self_reported"], now_str))
-            compute_obligation_metrics(ob["id"], db=db)
+            compute_obligation_metrics(ob["id"], db=db, user_id=uid)
             inserted_count += 1
 
-        # 4. Packaging: Independent drum inspection verified 100% compliant
         elif "packaging" in txt or "hazardous" in txt:
             db.execute("""
                 INSERT INTO evidence (obligation_id, source, trust_level, trust_weight, observed_value, description, raw_ref, created_at)
                 VALUES (?, 'sheet', 'independently_verifiable', ?, 100.0, 'Port Hazmat Authority Container Certificate #HZ-402: UN-approved drums inspected, seals intact', 'PORT-HZ-402', ?)
             """, (ob["id"], weights["independently_verifiable"], now_str))
-            compute_obligation_metrics(ob["id"], db=db)
+            compute_obligation_metrics(ob["id"], db=db, user_id=uid)
             inserted_count += 1
 
-        # 5. Environmental / ESG: 2.10 kg CO2e/kg (Compliant under 2.4 limit)
         elif "carbon" in txt or "environmental" in txt:
             db.execute("""
                 INSERT INTO evidence (obligation_id, source, trust_level, trust_weight, observed_value, description, raw_ref, created_at)
                 VALUES (?, 'sheet', 'independently_verifiable', ?, 2.10, 'ISO 14064 Greenhouse Gas Emissions Verification Audit: 2.10 kg CO2e/kg recorded', 'ISO-14064-AUDIT-2026', ?)
             """, (ob["id"], weights["independently_verifiable"], now_str))
-            compute_obligation_metrics(ob["id"], db=db)
+            compute_obligation_metrics(ob["id"], db=db, user_id=uid)
             inserted_count += 1
 
-        # 6. Insurance: $10M liability policy verified
         elif "insurance" in txt or "liability" in txt:
             db.execute("""
                 INSERT INTO evidence (obligation_id, source, trust_level, trust_weight, observed_value, description, raw_ref, created_at)
                 VALUES (?, 'manual', 'counterparty_confirmed', ?, 10000000.0, 'Underwriter policy schedule #GL-99382: $10,000,000 aggregate limit naming Buyer as additional insured', 'ACORD-25-CERT', ?)
             """, (ob["id"], weights["counterparty_confirmed"], now_str))
-            compute_obligation_metrics(ob["id"], db=db)
+            compute_obligation_metrics(ob["id"], db=db, user_id=uid)
             inserted_count += 1
 
     db.commit()

@@ -24,7 +24,12 @@ def app():
 
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    from app.models import create_user
+    with app.app_context():
+        create_user("Test User", "test@obligraph.io", "password123")
+    c = app.test_client()
+    c.post("/login", data={"email": "test@obligraph.io", "password": "password123"})
+    return c
 
 def test_load_demo_data_function():
     """Test seed/load_demo.py resets tables and seeds the canonical scenario."""

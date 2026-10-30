@@ -8,14 +8,39 @@ BASE_DIR = Path(__file__).resolve().parent
 # Load .env if present
 load_dotenv(BASE_DIR / ".env")
 
+
+def _normalize_db_url(url: str) -> str:
+    if url and url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
+    return url
+
+
 class Config:
+    FLASK_ENV = os.getenv("FLASK_ENV", "development").lower()
+    IS_PRODUCTION = FLASK_ENV == "production" or bool(os.getenv("RENDER"))
+
     SECRET_KEY = os.getenv("SECRET_KEY", "obligraph-default-dev-secret-key-2026")
     BASE_DIR = BASE_DIR
     DATABASE_PATH = os.getenv("DATABASE_PATH", str(BASE_DIR / "obligraph.db"))
-    UPLOAD_FOLDER = BASE_DIR / "uploads"
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max upload
+    DATABASE_URL = _normalize_db_url(os.getenv("DATABASE_URL", "").strip())
 
-    # LLM Settings
+    UPLOAD_FOLDER = BASE_DIR / "uploads"
+    MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10MB max upload
+
+    # Session & Cookie Security
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = IS_PRODUCTION
+    REMEMBER_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_SAMESITE = "Lax"
+    REMEMBER_COOKIE_SECURE = IS_PRODUCTION
+
+    # CSRF & Rate Limiting
+    WTF_CSRF_ENABLED = True
+    RATELIMIT_ENABLED = True
+    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+
+    # LLM Settings (default MOCK_LLM=true so production works without API keys)
     MOCK_LLM = os.getenv("MOCK_LLM", "true").lower() in ("true", "1", "yes")
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -44,7 +69,14 @@ class Config:
     IMAP_FOLDER = os.getenv("IMAP_FOLDER", "INBOX")
     GOOGLE_SHEET_CSV_URL = os.getenv("GOOGLE_SHEET_CSV_URL", "")
 
+
 class TestConfig(Config):
     TESTING = True
+    IS_PRODUCTION = False
+    SESSION_COOKIE_SECURE = False
+    REMEMBER_COOKIE_SECURE = False
+    WTF_CSRF_ENABLED = False
+    RATELIMIT_ENABLED = False
     DATABASE_PATH = str(BASE_DIR / "test_obligraph.db")
+    DATABASE_URL = ""
     MOCK_LLM = True

@@ -10,6 +10,7 @@
   </div>
 
   <form action="{{ url_for('settings.index') }}" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="card-modern p-4 mb-4">
       <h5 class="fw-bold mb-3 border-bottom pb-2">1. Risk Score Thresholds</h5>
       <div class="row g-3">
@@ -136,6 +137,7 @@
         <div class="modal-footer border-top border-subtle p-3">
           <button type="button" class="btn btn-outline-secondary rounded-pill btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
           <form action="{{ url_for('settings.reset_demo') }}" method="POST" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-warning rounded-pill btn-sm px-4 fw-semibold text-dark">
               Yes, Reset & Load Demo
             </button>

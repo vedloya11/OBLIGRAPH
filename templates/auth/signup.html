@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Create Account - OBLIGRAPH{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-center py-5" style="min-height: 75vh;">
+  <div class="card-modern p-4 p-md-5 shadow-lg w-100" style="max-width: 480px;">
+    <div class="text-center mb-4">
+      <div class="brand-icon-box mx-auto mb-3" style="width: 44px; height: 44px; font-size: 1.4rem;">
+        <i class="bi bi-diagram-3-fill"></i>
+      </div>
+      <h2 class="h4 fw-bold mb-1">Create Your Account</h2>
+      <p class="text-muted small mb-0">Get a dedicated, cryptographically isolated compliance dashboard</p>
+    </div>
+
+    <form action="{{ url_for('auth.signup') }}" method="POST" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="mb-3">
+        <label class="form-label small fw-bold">Full Name</label>
+        <div class="input-group">
+          <span class="input-group-text bg-transparent text-muted"><i class="bi bi-person"></i></span>
+          <input type="text" name="name" class="form-control" placeholder="Alex Mercer" value="{{ name or '' }}" required autofocus>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label small fw-bold">Work Email</label>
+        <div class="input-group">
+          <span class="input-group-text bg-transparent text-muted"><i class="bi bi-envelope"></i></span>
+          <input type="email" name="email" class="form-control" placeholder="alex@company.com" value="{{ email or '' }}" required>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label small fw-bold">Password</label>
+        <div class="input-group">
+          <span class="input-group-text bg-transparent text-muted"><i class="bi bi-key"></i></span>
+          <input type="password" name="password" class="form-control" placeholder="At least 8 characters" minlength="8" required>
+        </div>
+        <div class="form-text fs-xs">Must be at least 8 characters long.</div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label small fw-bold">Confirm Password <span class="text-muted fw-normal">(Optional)</span></label>
+        <div class="input-group">
+          <span class="input-group-text bg-transparent text-muted"><i class="bi bi-shield-check"></i></span>
+          <input type="password" name="confirm_password" class="form-control" placeholder="Repeat password">
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm">
+        <i class="bi bi-person-plus me-1"></i> Create Isolated Workspace
+      </button>
+    </form>
+
+    <div class="text-center mt-4 pt-3 border-top border-subtle">
+      <span class="text-muted small">Already registered?</span>
+      <a href="{{ url_for('auth.login') }}" class="small fw-semibold text-primary text-decoration-none ms-1">
+        Sign in instead <i class="bi bi-arrow-right"></i>
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

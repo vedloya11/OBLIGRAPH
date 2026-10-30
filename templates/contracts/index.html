@@ -48,12 +48,28 @@
         </table>
       </div>
       {% else %}
-        {% set icon = 'bi-file-earmark-text' %}
-        {% set title = 'No Contracts Ingested' %}
-        {% set description = 'Upload a supply agreement, SLA or vendor contract to extract obligations automatically.' %}
-        {% set action_url = url_for('contracts.upload') %}
-        {% set action_label = 'Upload Contract' %}
-        {% include 'components/empty_state.html' %}
+        <div class="p-5 text-center">
+          <div class="stat-icon bg-primary-subtle text-primary fs-2 mx-auto mb-3" style="width: 64px; height: 64px;">
+            <i class="bi bi-file-earmark-text"></i>
+          </div>
+          <h5 class="fw-bold mb-2">No Contracts Ingested Yet</h5>
+          <p class="text-muted small mx-auto mb-4" style="max-width: 480px;">
+            Upload a supply agreement, SLA, or vendor contract (PDF/DOCX) to extract obligations automatically, or load our sample battery-materials contract into your account.
+          </p>
+          <div class="d-flex flex-wrap justify-content-center gap-3">
+            <a href="{{ url_for('contracts.upload') }}" class="btn btn-primary rounded-pill px-4 py-2 shadow-sm d-inline-flex align-items-center gap-2">
+              <i class="bi bi-cloud-arrow-up"></i>
+              <span>Upload your contract</span>
+            </a>
+            <form action="{{ url_for('contracts.load_sample') }}" method="POST" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-outline-warning rounded-pill px-4 py-2 shadow-sm d-inline-flex align-items-center gap-2">
+                <i class="bi bi-lightning-charge-fill"></i>
+                <span>Load sample battery-materials contract</span>
+              </button>
+            </form>
+          </div>
+        </div>
       {% endif %}
     </div>
   </div>

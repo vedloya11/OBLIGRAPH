@@ -28,7 +28,12 @@ def app():
 
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    from app.models import create_user
+    with app.app_context():
+        create_user("Test User", "test@obligraph.io", "password123")
+    c = app.test_client()
+    c.post("/login", data={"email": "test@obligraph.io", "password": "password123"})
+    return c
 
 def test_database_tables_exist(app):
     """Test that all 7 required schema tables exist in the initialized SQLite DB."""
@@ -61,9 +66,10 @@ def test_default_settings_seeded(app):
         assert int(settings["dispute_window_hours"]) == 48
         assert "weight_self_reported" in settings
 
-def test_landing_page_renders(client):
-    """Test that the landing page renders with hero and 6-stage pipeline."""
-    response = client.get("/")
+def test_landing_page_renders(app):
+    """Test that the public landing page renders with hero and 6-stage pipeline."""
+    anon_client = app.test_client()
+    response = anon_client.get("/")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Autonomous Contract-to-Execution Obligation Graph Engine" in html
@@ -81,7 +87,7 @@ def test_dashboard_shell_renders(client):
     assert "Obligation Intelligence Dashboard" in html
     assert "Total Obligations" in html
     assert "Compliance Rate" in html
-    assert "No Obligations Ingested Yet" in html or "table-modern" in html
+    assert "Upload your contract" in html or "No Obligations Ingested Yet" in html or "table-modern" in html
 
 def test_navigation_routes_render(client):
     """Test that all blueprint endpoints resolve cleanly."""

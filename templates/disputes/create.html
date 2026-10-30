@@ -111,6 +111,7 @@
     </div>
     <div class="card-body-modern p-4">
       <form action="{{ url_for('disputes.submit') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="obligation_id" value="{{ obligation.id }}">
 
         <div class="row g-3 mb-3">

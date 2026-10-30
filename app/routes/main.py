@@ -1,21 +1,33 @@
 import datetime
 from typing import Dict, Any, List, Optional
-from flask import Blueprint, render_template, redirect, url_for, request, session, flash, jsonify
-from app.database import get_db
+from flask import Blueprint, render_template, redirect, url_for, request, session, flash, jsonify, abort
+from flask_login import current_user
+from app.database import get_db, get_owned_or_404
 from engine.hash_chain import verify_chain, get_last_escalation_block
 
 main_bp = Blueprint("main", __name__)
 
+
+@main_bp.route("/healthz")
+def healthz():
+    """Health check endpoint for Render deployment probes."""
+    return jsonify({"status": "ok", "service": "obligraph"}), 200
+
+
 @main_bp.route("/")
 def landing():
-    """Marketing and architecture landing page explaining the 6-stage pipeline."""
+    """Public landing page. Logged-in users are directed to their dashboard."""
+    if current_user.is_authenticated:
+        return redirect(url_for("main.dashboard"))
     return render_template("landing.html")
+
 
 @main_bp.route("/dashboard")
 def dashboard():
-    """Main predictive compliance monitoring dashboard with live KPIs, charts, and lookahead."""
+    """Main predictive compliance monitoring dashboard with live per-user KPIs, charts, and lookahead."""
     db = get_db()
-    
+    uid = current_user.id
+
     # Check for contract scoping in query params or session
     contract_param = request.args.get("contract_id")
     if contract_param:
@@ -23,54 +35,115 @@ def dashboard():
             session["active_contract_id"] = None
             session["active_contract_title"] = "All Contracts (Portfolio)"
         elif contract_param.isdigit():
-            c_row = db.execute("SELECT id, title FROM contracts WHERE id = ?", (int(contract_param),)).fetchone()
-            if c_row:
-                session["active_contract_id"] = c_row["id"]
-                session["active_contract_title"] = c_row["title"]
+            c_row = get_owned_or_404("contract", int(contract_param), user_id=uid, db=db)
+            session["active_contract_id"] = c_row["id"]
+            session["active_contract_title"] = c_row["title"]
 
     active_contract_id = session.get("active_contract_id")
+    if active_contract_id:
+        owned_c = db.execute(
+            "SELECT id, title FROM contracts WHERE id = ? AND user_id = ?",
+            (active_contract_id, uid)
+        ).fetchone()
+        if not owned_c:
+            active_contract_id = None
+            session["active_contract_id"] = None
+            session["active_contract_title"] = "All Contracts (Portfolio)"
+
     is_scoped = bool(active_contract_id)
 
-    # Base filter criteria
-    contract_where = "WHERE o.contract_id = ?" if is_scoped else ""
-    contract_params = (active_contract_id,) if is_scoped else ()
+    # Query summary metrics scoped to current_user
+    total_contracts = db.execute(
+        "SELECT COUNT(*) FROM contracts WHERE user_id = ?", (uid,)
+    ).fetchone()[0]
 
-    # Query summary metrics
-    total_contracts = db.execute("SELECT COUNT(*) FROM contracts").fetchone()[0]
-    
     if is_scoped:
-        total_obligations = db.execute("SELECT COUNT(*) FROM obligations WHERE contract_id = ?", (active_contract_id,)).fetchone()[0]
-        compliant_count = db.execute("SELECT COUNT(*) FROM obligations WHERE contract_id = ? AND status = 'COMPLIANT'", (active_contract_id,)).fetchone()[0]
-        at_risk_count = db.execute("SELECT COUNT(*) FROM obligations WHERE contract_id = ? AND status = 'AT_RISK'", (active_contract_id,)).fetchone()[0]
-        violated_count = db.execute("SELECT COUNT(*) FROM obligations WHERE contract_id = ? AND status = 'VIOLATED'", (active_contract_id,)).fetchone()[0]
-        pending_count = db.execute("SELECT COUNT(*) FROM obligations WHERE contract_id = ? AND status = 'PENDING'", (active_contract_id,)).fetchone()[0]
-        
-        low_risk_count = db.execute("SELECT COUNT(*) FROM obligations WHERE contract_id = ? AND risk_label = 'LOW'", (active_contract_id,)).fetchone()[0]
-        medium_risk_count = db.execute("SELECT COUNT(*) FROM obligations WHERE contract_id = ? AND risk_label = 'MEDIUM'", (active_contract_id,)).fetchone()[0]
-        high_risk_count = db.execute("SELECT COUNT(*) FROM obligations WHERE contract_id = ? AND risk_label = 'HIGH'", (active_contract_id,)).fetchone()[0]
-        
-        open_disputes = db.execute(
-            "SELECT COUNT(*) FROM disputes d JOIN obligations o ON d.obligation_id = o.id WHERE d.status = 'open' AND o.contract_id = ?",
-            (active_contract_id,)
+        total_obligations = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.contract_id = ?",
+            (uid, active_contract_id)
         ).fetchone()[0]
-        
+        compliant_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.contract_id = ? AND o.status = 'COMPLIANT'",
+            (uid, active_contract_id)
+        ).fetchone()[0]
+        at_risk_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.contract_id = ? AND o.status = 'AT_RISK'",
+            (uid, active_contract_id)
+        ).fetchone()[0]
+        violated_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.contract_id = ? AND o.status = 'VIOLATED'",
+            (uid, active_contract_id)
+        ).fetchone()[0]
+        pending_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.contract_id = ? AND o.status = 'PENDING'",
+            (uid, active_contract_id)
+        ).fetchone()[0]
+
+        low_risk_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.contract_id = ? AND o.risk_label = 'LOW'",
+            (uid, active_contract_id)
+        ).fetchone()[0]
+        medium_risk_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.contract_id = ? AND o.risk_label = 'MEDIUM'",
+            (uid, active_contract_id)
+        ).fetchone()[0]
+        high_risk_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.contract_id = ? AND o.risk_label = 'HIGH'",
+            (uid, active_contract_id)
+        ).fetchone()[0]
+
+        open_disputes = db.execute(
+            "SELECT COUNT(*) FROM disputes d JOIN obligations o ON d.obligation_id = o.id JOIN contracts c ON o.contract_id = c.id WHERE d.status = 'open' AND c.user_id = ? AND o.contract_id = ?",
+            (uid, active_contract_id)
+        ).fetchone()[0]
+
         total_escalations = db.execute(
-            "SELECT COUNT(*) FROM escalations e JOIN obligations o ON e.obligation_id = o.id WHERE o.contract_id = ?",
-            (active_contract_id,)
+            "SELECT COUNT(*) FROM escalations e JOIN obligations o ON e.obligation_id = o.id WHERE e.user_id = ? AND o.contract_id = ?",
+            (uid, active_contract_id)
         ).fetchone()[0]
     else:
-        total_obligations = db.execute("SELECT COUNT(*) FROM obligations").fetchone()[0]
-        compliant_count = db.execute("SELECT COUNT(*) FROM obligations WHERE status = 'COMPLIANT'").fetchone()[0]
-        at_risk_count = db.execute("SELECT COUNT(*) FROM obligations WHERE status = 'AT_RISK'").fetchone()[0]
-        violated_count = db.execute("SELECT COUNT(*) FROM obligations WHERE status = 'VIOLATED'").fetchone()[0]
-        pending_count = db.execute("SELECT COUNT(*) FROM obligations WHERE status = 'PENDING'").fetchone()[0]
-        
-        low_risk_count = db.execute("SELECT COUNT(*) FROM obligations WHERE risk_label = 'LOW'").fetchone()[0]
-        medium_risk_count = db.execute("SELECT COUNT(*) FROM obligations WHERE risk_label = 'MEDIUM'").fetchone()[0]
-        high_risk_count = db.execute("SELECT COUNT(*) FROM obligations WHERE risk_label = 'HIGH'").fetchone()[0]
-        
-        open_disputes = db.execute("SELECT COUNT(*) FROM disputes WHERE status = 'open'").fetchone()[0]
-        total_escalations = db.execute("SELECT COUNT(*) FROM escalations").fetchone()[0]
+        total_obligations = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ?",
+            (uid,)
+        ).fetchone()[0]
+        compliant_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.status = 'COMPLIANT'",
+            (uid,)
+        ).fetchone()[0]
+        at_risk_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.status = 'AT_RISK'",
+            (uid,)
+        ).fetchone()[0]
+        violated_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.status = 'VIOLATED'",
+            (uid,)
+        ).fetchone()[0]
+        pending_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.status = 'PENDING'",
+            (uid,)
+        ).fetchone()[0]
+
+        low_risk_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.risk_label = 'LOW'",
+            (uid,)
+        ).fetchone()[0]
+        medium_risk_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.risk_label = 'MEDIUM'",
+            (uid,)
+        ).fetchone()[0]
+        high_risk_count = db.execute(
+            "SELECT COUNT(*) FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.risk_label = 'HIGH'",
+            (uid,)
+        ).fetchone()[0]
+
+        open_disputes = db.execute(
+            "SELECT COUNT(*) FROM disputes d JOIN obligations o ON d.obligation_id = o.id JOIN contracts c ON o.contract_id = c.id WHERE d.status = 'open' AND c.user_id = ?",
+            (uid,)
+        ).fetchone()[0]
+        total_escalations = db.execute(
+            "SELECT COUNT(*) FROM escalations WHERE user_id = ?",
+            (uid,)
+        ).fetchone()[0]
 
     compliance_pct = round((compliant_count / total_obligations * 100), 1) if total_obligations > 0 else 0.0
 
@@ -84,23 +157,35 @@ def dashboard():
         compliance_pct
     ]
 
-    # Cryptographic Ledger State
-    chain_audit = verify_chain(db)
-    last_block = get_last_escalation_block(db)
+    # Cryptographic Ledger State for current user
+    chain_audit = verify_chain(db, user_id=uid)
+    last_block = get_last_escalation_block(db, user_id=uid)
 
-    # All obligations (or scoped) for table and lookahead
-    query = (
-        "SELECT o.*, c.title as contract_title FROM obligations o "
-        "LEFT JOIN contracts c ON o.contract_id = c.id "
-        f"{contract_where} ORDER BY o.risk_score DESC, o.updated_at DESC"
-    )
+    # All obligations for current user (or scoped contract)
+    if is_scoped:
+        query = (
+            "SELECT o.*, c.title as contract_title FROM obligations o "
+            "JOIN contracts c ON o.contract_id = c.id "
+            "WHERE c.user_id = ? AND o.contract_id = ? "
+            "ORDER BY o.risk_score DESC, o.updated_at DESC"
+        )
+        contract_params = (uid, active_contract_id)
+    else:
+        query = (
+            "SELECT o.*, c.title as contract_title FROM obligations o "
+            "JOIN contracts c ON o.contract_id = c.id "
+            "WHERE c.user_id = ? "
+            "ORDER BY o.risk_score DESC, o.updated_at DESC"
+        )
+        contract_params = (uid,)
+
     all_obligations_raw = db.execute(query, contract_params).fetchall()
     obligations = [dict(r) for r in all_obligations_raw]
 
     # 30-Day Lookahead Calendar / Upcoming Deadlines
     today = datetime.date.today()
     upcoming_deadlines = []
-    
+
     for ob in obligations:
         d_str = ob.get("deadline_date")
         if d_str:
@@ -109,7 +194,7 @@ def dashboard():
                 if len(parts) == 3:
                     d_date = datetime.date(parts[0], parts[1], parts[2])
                     days_left = (d_date - today).days
-                    
+
                     if days_left < 0:
                         urgency = "danger"
                         badge_text = f"Overdue by {abs(days_left)}d"
@@ -142,38 +227,48 @@ def dashboard():
 
     upcoming_deadlines.sort(key=lambda x: x["days_left"])
 
-    # Recent escalations (scoped or portfolio)
+    # Recent escalations (scoped to current user)
     if is_scoped:
         escalations = db.execute(
             "SELECT e.*, o.clause_text FROM escalations e "
             "JOIN obligations o ON e.obligation_id = o.id "
-            "WHERE o.contract_id = ? "
+            "WHERE e.user_id = ? AND o.contract_id = ? "
             "ORDER BY e.created_at DESC LIMIT 5",
-            (active_contract_id,)
+            (uid, active_contract_id)
         ).fetchall()
     else:
         escalations = db.execute(
             "SELECT e.*, o.clause_text FROM escalations e "
             "LEFT JOIN obligations o ON e.obligation_id = o.id "
-            "ORDER BY e.created_at DESC LIMIT 5"
+            "WHERE e.user_id = ? "
+            "ORDER BY e.created_at DESC LIMIT 5",
+            (uid,)
         ).fetchall()
 
-    # Mini Dependency Graph Metrics
-    total_dependencies = db.execute("SELECT COUNT(*) FROM dependencies").fetchone()[0]
+    # Mini Dependency Graph Metrics (scoped to current user)
+    total_dependencies = db.execute(
+        "SELECT COUNT(*) FROM dependencies d JOIN obligations o ON d.upstream_id = o.id JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ?",
+        (uid,)
+    ).fetchone()[0]
     bottlenecks = db.execute(
         "SELECT d.upstream_id as ob_id, o.clause_text, o.actor, COUNT(*) as downstream_count "
         "FROM dependencies d "
         "JOIN obligations o ON d.upstream_id = o.id "
-        "GROUP BY d.upstream_id "
-        "ORDER BY downstream_count DESC LIMIT 2"
+        "JOIN contracts c ON o.contract_id = c.id "
+        "WHERE c.user_id = ? "
+        "GROUP BY d.upstream_id, o.clause_text, o.actor "
+        "ORDER BY downstream_count DESC LIMIT 2",
+        (uid,)
     ).fetchall()
 
-    # Unified Live Activity Ticker (evidence, disputes, escalations)
+    # Unified Live Activity Ticker (evidence, disputes, escalations scoped to current user)
     activities = []
-    
-    # 1. Recent Evidence
+
     recent_ev = db.execute(
-        "SELECT 'evidence' as type, id, description, source, created_at, obligation_id FROM evidence ORDER BY created_at DESC LIMIT 4"
+        "SELECT 'evidence' as type, e.id, e.description, e.source, e.created_at, e.obligation_id "
+        "FROM evidence e JOIN obligations o ON e.obligation_id = o.id JOIN contracts c ON o.contract_id = c.id "
+        "WHERE c.user_id = ? ORDER BY e.created_at DESC LIMIT 4",
+        (uid,)
     ).fetchall()
     for ev in recent_ev:
         activities.append({
@@ -185,9 +280,11 @@ def dashboard():
             "color": "text-success"
         })
 
-    # 2. Recent Disputes
     recent_disp = db.execute(
-        "SELECT 'dispute' as type, id, counter_evidence, status, created_at, obligation_id FROM disputes ORDER BY created_at DESC LIMIT 3"
+        "SELECT 'dispute' as type, d.id, d.counter_evidence, d.status, d.created_at, d.obligation_id "
+        "FROM disputes d JOIN obligations o ON d.obligation_id = o.id JOIN contracts c ON o.contract_id = c.id "
+        "WHERE c.user_id = ? ORDER BY d.created_at DESC LIMIT 3",
+        (uid,)
     ).fetchall()
     for disp in recent_disp:
         activities.append({
@@ -199,9 +296,10 @@ def dashboard():
             "color": "text-warning"
         })
 
-    # 3. Recent Escalations
     recent_esc = db.execute(
-        "SELECT 'escalation' as type, id, reason, created_at, obligation_id FROM escalations ORDER BY created_at DESC LIMIT 3"
+        "SELECT 'escalation' as type, id, reason, created_at, obligation_id "
+        "FROM escalations WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
+        (uid,)
     ).fetchall()
     for esc in recent_esc:
         activities.append({
@@ -213,10 +311,13 @@ def dashboard():
             "color": "text-danger"
         })
 
-    activities.sort(key=lambda x: x["time"] or "", reverse=True)
+    activities.sort(key=lambda x: str(x["time"] or ""), reverse=True)
     activities = activities[:6]
 
-    all_contracts = db.execute("SELECT id, title FROM contracts ORDER BY id ASC").fetchall()
+    all_contracts = db.execute(
+        "SELECT id, title FROM contracts WHERE user_id = ? ORDER BY id ASC",
+        (uid,)
+    ).fetchall()
 
     return render_template(
         "dashboard.html",
@@ -255,10 +356,12 @@ def dashboard():
         is_scoped=is_scoped
     )
 
+
 @main_bp.route("/switch-contract/<contract_id>")
 def switch_contract(contract_id):
-    """Switch active contract or view all portfolio contracts."""
+    """Switch active contract or view all portfolio contracts for the current user."""
     db = get_db()
+    uid = current_user.id
     if str(contract_id).lower() in ("all", "0", "portfolio"):
         session["active_contract_id"] = None
         session["active_contract_title"] = "All Contracts (Portfolio)"
@@ -266,34 +369,34 @@ def switch_contract(contract_id):
     else:
         try:
             cid = int(contract_id)
-            contract = db.execute("SELECT id, title FROM contracts WHERE id = ?", (cid,)).fetchone()
-            if contract:
-                session["active_contract_id"] = contract["id"]
-                session["active_contract_title"] = contract["title"]
-                flash(f"Switched active contract to '{contract['title']}'", "info")
-            else:
-                flash("Contract not found", "warning")
         except ValueError:
-            flash("Invalid contract identifier", "warning")
-            
+            abort(404)
+        contract = get_owned_or_404("contract", cid, user_id=uid, db=db)
+        session["active_contract_id"] = contract["id"]
+        session["active_contract_title"] = contract["title"]
+        flash(f"Switched active contract to '{contract['title']}'", "info")
+
     return redirect(request.referrer or url_for("main.dashboard"))
+
 
 @main_bp.route("/api/search")
 def api_search():
-    """Global fast fuzzy search endpoint across contracts, obligations, evidence, and escalations."""
+    """Global fast fuzzy search endpoint across the current user's contracts, obligations, evidence, and escalations."""
     q = request.args.get("q", "").strip()
     if not q or len(q) < 2:
         return jsonify({"query": q, "results": []})
 
     db = get_db()
+    uid = current_user.id
     results = []
     param = f"%{q}%"
 
-    # Search obligations
+    # Search obligations owned by current user
     obs = db.execute(
-        "SELECT id, clause_text, actor, risk_label, status FROM obligations "
-        "WHERE clause_text LIKE ? OR actor LIKE ? LIMIT 6",
-        (param, param)
+        "SELECT o.id, o.clause_text, o.actor, o.risk_label, o.status FROM obligations o "
+        "JOIN contracts c ON o.contract_id = c.id "
+        "WHERE c.user_id = ? AND (o.clause_text LIKE ? OR o.actor LIKE ?) LIMIT 6",
+        (uid, param, param)
     ).fetchall()
     for o in obs:
         results.append({
@@ -305,10 +408,10 @@ def api_search():
             "icon": "bi-journal-check"
         })
 
-    # Search contracts
+    # Search contracts owned by current user
     cts = db.execute(
-        "SELECT id, title, filename FROM contracts WHERE title LIKE ? OR filename LIKE ? LIMIT 4",
-        (param, param)
+        "SELECT id, title, filename FROM contracts WHERE user_id = ? AND (title LIKE ? OR filename LIKE ?) LIMIT 4",
+        (uid, param, param)
     ).fetchall()
     for c in cts:
         results.append({
@@ -320,10 +423,10 @@ def api_search():
             "icon": "bi-file-earmark-text"
         })
 
-    # Search escalations
+    # Search escalations owned by current user
     escs = db.execute(
-        "SELECT id, obligation_id, reason, entry_hash FROM escalations WHERE reason LIKE ? OR entry_hash LIKE ? LIMIT 4",
-        (param, param)
+        "SELECT id, obligation_id, reason, entry_hash FROM escalations WHERE user_id = ? AND (reason LIKE ? OR entry_hash LIKE ?) LIMIT 4",
+        (uid, param, param)
     ).fetchall()
     for e in escs:
         results.append({
@@ -335,10 +438,12 @@ def api_search():
             "icon": "bi-link-45deg"
         })
 
-    # Search evidence
+    # Search evidence owned by current user
     evs = db.execute(
-        "SELECT id, description, source, obligation_id FROM evidence WHERE description LIKE ? OR raw_ref LIKE ? LIMIT 4",
-        (param, param)
+        "SELECT e.id, e.description, e.source, e.obligation_id FROM evidence e "
+        "JOIN obligations o ON e.obligation_id = o.id JOIN contracts c ON o.contract_id = c.id "
+        "WHERE c.user_id = ? AND (e.description LIKE ? OR e.raw_ref LIKE ?) LIMIT 4",
+        (uid, param, param)
     ).fetchall()
     for ev in evs:
         results.append({
@@ -352,28 +457,44 @@ def api_search():
 
     return jsonify({"query": q, "results": results})
 
+
 @main_bp.route("/reports/export")
 def export_compliance_report():
-    """Generate print-ready executive compliance audit certificate report."""
+    """Generate print-ready executive compliance audit certificate report for current user."""
     db = get_db()
-    contract_id = request.args.get("contract_id") or session.get("active_contract_id")
-    
+    uid = current_user.id
+    explicit_cid = request.args.get("contract_id")
+    session_cid = session.get("active_contract_id")
+
     contract = None
-    if contract_id:
+    if explicit_cid:
         try:
-            contract = db.execute("SELECT * FROM contracts WHERE id = ?", (int(contract_id),)).fetchone()
+            cid_int = int(explicit_cid)
         except ValueError:
-            contract = None
+            abort(404)
+        contract = get_owned_or_404("contract", cid_int, user_id=uid, db=db)
+    elif session_cid:
+        contract = db.execute(
+            "SELECT * FROM contracts WHERE id = ? AND user_id = ?",
+            (int(session_cid), uid)
+        ).fetchone()
 
-    where_sql = "WHERE o.contract_id = ?" if contract else ""
-    params = (contract["id"],) if contract else ()
-
-    obligations = db.execute(
-        f"SELECT o.*, c.title as contract_title FROM obligations o "
-        f"LEFT JOIN contracts c ON o.contract_id = c.id {where_sql} "
-        f"ORDER BY o.risk_score DESC, o.id ASC",
-        params
-    ).fetchall()
+    if contract:
+        obligations = db.execute(
+            "SELECT o.*, c.title as contract_title FROM obligations o "
+            "JOIN contracts c ON o.contract_id = c.id "
+            "WHERE c.user_id = ? AND o.contract_id = ? "
+            "ORDER BY o.risk_score DESC, o.id ASC",
+            (uid, contract["id"])
+        ).fetchall()
+    else:
+        obligations = db.execute(
+            "SELECT o.*, c.title as contract_title FROM obligations o "
+            "JOIN contracts c ON o.contract_id = c.id "
+            "WHERE c.user_id = ? "
+            "ORDER BY o.risk_score DESC, o.id ASC",
+            (uid,)
+        ).fetchall()
 
     total_obs = len(obligations)
     compliant_obs = sum(1 for o in obligations if o["status"] == "COMPLIANT")
@@ -382,21 +503,22 @@ def export_compliance_report():
     pending_obs = sum(1 for o in obligations if o["status"] == "PENDING")
     compliance_pct = round((compliant_obs / total_obs * 100), 1) if total_obs > 0 else 0.0
 
-    chain_audit = verify_chain(db)
-    last_block = get_last_escalation_block(db)
+    chain_audit = verify_chain(db, user_id=uid)
+    last_block = get_last_escalation_block(db, user_id=uid)
 
-    # Escalations related to these obligations
     if contract:
         escalations = db.execute(
             "SELECT e.*, o.clause_text FROM escalations e "
             "JOIN obligations o ON e.obligation_id = o.id "
-            "WHERE o.contract_id = ? ORDER BY e.id ASC",
-            (contract["id"],)
+            "WHERE e.user_id = ? AND o.contract_id = ? ORDER BY e.id ASC",
+            (uid, contract["id"])
         ).fetchall()
     else:
         escalations = db.execute(
             "SELECT e.*, o.clause_text FROM escalations e "
-            "LEFT JOIN obligations o ON e.obligation_id = o.id ORDER BY e.id ASC"
+            "LEFT JOIN obligations o ON e.obligation_id = o.id "
+            "WHERE e.user_id = ? ORDER BY e.id ASC",
+            (uid,)
         ).fetchall()
 
     now = datetime.datetime.now(datetime.timezone.utc)

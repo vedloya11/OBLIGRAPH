@@ -143,6 +143,7 @@
             <div class="p-3 rounded-3 border border-primary-subtle" style="background: var(--bg-surface-elevated);">
               <h6 class="fw-bold small mb-3 text-primary">Create Dependency Link for Obligation #{{ obligation.id }}</h6>
               <form action="{{ url_for('obligations.add_dependency') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="row g-2 mb-2">
                   <div class="col-md-4">
                     <label class="form-label fs-xs fw-bold">Direction</label>
@@ -198,6 +199,7 @@
                   <div class="text-muted fs-xs"><i class="bi bi-arrow-return-right me-1 text-warning"></i>Constraint: <strong>{{ u.note }}</strong></div>
                 </div>
                 <form action="{{ url_for('obligations.delete_dependency', dep_id=u.dep_id) }}" method="POST" onsubmit="return confirm('Remove this dependency link?')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-sm btn-outline-danger border-0 p-1" title="Remove dependency">
                     <i class="bi bi-trash3"></i>
                   </button>
@@ -233,6 +235,7 @@
                   <div class="text-muted fs-xs"><i class="bi bi-arrow-return-right me-1 text-info"></i>Constraint: <strong>{{ d.note }}</strong></div>
                 </div>
                 <form action="{{ url_for('obligations.delete_dependency', dep_id=d.dep_id) }}" method="POST" onsubmit="return confirm('Remove this dependency link?')">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-sm btn-outline-danger border-0 p-1" title="Remove dependency">
                     <i class="bi bi-trash3"></i>
                   </button>

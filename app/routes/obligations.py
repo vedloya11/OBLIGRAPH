@@ -1,11 +1,21 @@
-from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
-from app.database import get_db
+from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, abort
+from flask_login import current_user
+from app.database import get_db, get_owned_or_404
 
 obligations_bp = Blueprint("obligations", __name__, url_prefix="/obligations")
 
-def seed_default_dependencies_if_needed(contract_id: int):
-    """Seed 2-4 realistic dependency links for a contract if none exist yet."""
+
+def seed_default_dependencies_if_needed(contract_id: int, user_id: int = None):
+    """Seed 2-4 realistic dependency links for a user's contract if none exist yet."""
     db = get_db()
+    uid = user_id if user_id is not None else current_user.id
+    owned = db.execute(
+        "SELECT id FROM contracts WHERE id = ? AND user_id = ?",
+        (contract_id, uid)
+    ).fetchone()
+    if not owned:
+        return
+
     existing_count = db.execute("""
         SELECT COUNT(*) FROM dependencies d
         JOIN obligations o ON d.upstream_id = o.id
@@ -19,7 +29,6 @@ def seed_default_dependencies_if_needed(contract_id: int):
         ).fetchall()
 
         if len(obligations) >= 5:
-            # Map by keywords
             notice_id = None
             price_id = None
             purity_id = None
@@ -52,7 +61,6 @@ def seed_default_dependencies_if_needed(contract_id: int):
             if coa_id and payment_id:
                 links_to_add.append((coa_id, payment_id, "Approval: Quality release prerequisite for invoice settlement"))
 
-            # Fallback if specific keywords were not all present: link first few sequentially
             if not links_to_add and len(obligations) >= 4:
                 links_to_add.append((obligations[0]["id"], obligations[1]["id"], "Operational Prerequisite"))
                 links_to_add.append((obligations[2]["id"], obligations[3]["id"], "Verification Condition"))
@@ -64,11 +72,12 @@ def seed_default_dependencies_if_needed(contract_id: int):
                 )
             db.commit()
 
+
 @obligations_bp.route("/")
 def index():
     db = get_db()
-    
-    # Query parameters for filtering and sorting
+    uid = current_user.id
+
     search = request.args.get("search", "").strip()
     actor_filter = request.args.get("actor", "").strip()
     status_filter = request.args.get("status", "").strip()
@@ -76,13 +85,19 @@ def index():
     sort_by = request.args.get("sort", "id_asc").strip()
     contract_filter = request.args.get("contract_id", "").strip()
 
+    if contract_filter:
+        if contract_filter.isdigit():
+            get_owned_or_404("contract", int(contract_filter), user_id=uid, db=db)
+        else:
+            abort(404)
+
     query = """
         SELECT o.*, c.title as contract_title 
         FROM obligations o 
-        LEFT JOIN contracts c ON o.contract_id = c.id 
-        WHERE 1=1
+        JOIN contracts c ON o.contract_id = c.id 
+        WHERE c.user_id = ?
     """
-    params = []
+    params = [uid]
 
     if search:
         query += " AND (o.clause_text LIKE ? OR o.actor LIKE ? OR o.expected_state LIKE ? OR o.required_evidence LIKE ?)"
@@ -103,9 +118,8 @@ def index():
 
     if contract_filter:
         query += " AND o.contract_id = ?"
-        params.append(contract_filter)
+        params.append(int(contract_filter))
 
-    # Sorting
     if sort_by == "risk_desc":
         query += " ORDER BY o.risk_score DESC, o.id ASC"
     elif sort_by == "risk_asc":
@@ -121,15 +135,20 @@ def index():
 
     obligations = db.execute(query, params).fetchall()
 
-    # Get distinct actors and contracts for filter dropdowns
-    actors = [r[0] for r in db.execute("SELECT DISTINCT actor FROM obligations WHERE actor != '' ORDER BY actor ASC").fetchall()]
-    contracts = db.execute("SELECT id, title FROM contracts ORDER BY id DESC").fetchall()
+    actors = [
+        r[0] for r in db.execute(
+            "SELECT DISTINCT o.actor FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.actor != '' ORDER BY o.actor ASC",
+            (uid,)
+        ).fetchall()
+    ]
+    contracts = db.execute(
+        "SELECT id, title FROM contracts WHERE user_id = ? ORDER BY id DESC",
+        (uid,)
+    ).fetchall()
 
-    # Seed dependencies for active contracts if needed
     for c in contracts:
-        seed_default_dependencies_if_needed(c["id"])
+        seed_default_dependencies_if_needed(c["id"], user_id=uid)
 
-    # Compute quick summary stats
     total = len(obligations)
     compliant = sum(1 for o in obligations if o["status"] == "COMPLIANT")
     at_risk = sum(1 for o in obligations if o["status"] == "AT_RISK")
@@ -149,42 +168,33 @@ def index():
         stats={"total": total, "compliant": compliant, "at_risk": at_risk, "violated": violated}
     )
 
+
 @obligations_bp.route("/<int:obligation_id>")
 def detail(obligation_id):
     db = get_db()
-    obligation = db.execute("""
-        SELECT o.*, c.title as contract_title 
-        FROM obligations o 
-        LEFT JOIN contracts c ON o.contract_id = c.id 
-        WHERE o.id = ?
-    """, (obligation_id,)).fetchone()
+    uid = current_user.id
+    obligation = get_owned_or_404("obligation", obligation_id, user_id=uid, db=db)
 
-    if not obligation:
-        flash("Obligation record not found.", "warning")
-        return redirect(url_for("obligations.index"))
+    seed_default_dependencies_if_needed(obligation["contract_id"], user_id=uid)
 
-    # Seed dependencies if needed
-    seed_default_dependencies_if_needed(obligation["contract_id"])
-
-    # Fetch Upstream dependencies (obligations that this obligation depends ON)
     upstream = db.execute("""
         SELECT d.id as dep_id, d.note, o.* 
         FROM dependencies d 
         JOIN obligations o ON d.upstream_id = o.id 
-        WHERE d.downstream_id = ?
+        JOIN contracts c ON o.contract_id = c.id
+        WHERE d.downstream_id = ? AND c.user_id = ?
         ORDER BY o.id ASC
-    """, (obligation_id,)).fetchall()
+    """, (obligation_id, uid)).fetchall()
 
-    # Fetch Downstream dependencies (obligations that depend ON this obligation)
     downstream = db.execute("""
         SELECT d.id as dep_id, d.note, o.* 
         FROM dependencies d 
         JOIN obligations o ON d.downstream_id = o.id 
-        WHERE d.upstream_id = ?
+        JOIN contracts c ON o.contract_id = c.id
+        WHERE d.upstream_id = ? AND c.user_id = ?
         ORDER BY o.id ASC
-    """, (obligation_id,)).fetchall()
+    """, (obligation_id, uid)).fetchall()
 
-    # Fetch all other obligations in this contract for the "Add Dependency" dropdown
     sibling_obligations = db.execute("""
         SELECT id, clause_text, actor, risk_label 
         FROM obligations 
@@ -192,14 +202,12 @@ def detail(obligation_id):
         ORDER BY id ASC
     """, (obligation["contract_id"], obligation_id)).fetchall()
 
-    # Fetch related evidence
     evidence = db.execute("""
         SELECT * FROM evidence 
         WHERE obligation_id = ? 
         ORDER BY created_at DESC
     """, (obligation_id,)).fetchall()
 
-    # Fetch related disputes
     disputes = db.execute("""
         SELECT * FROM disputes 
         WHERE obligation_id = ? 
@@ -216,19 +224,30 @@ def detail(obligation_id):
         disputes=disputes
     )
 
+
 @obligations_bp.route("/graph")
 def graph():
     db = get_db()
-    contracts = db.execute("SELECT id, title FROM contracts ORDER BY id DESC").fetchall()
+    uid = current_user.id
+    contracts = db.execute(
+        "SELECT id, title FROM contracts WHERE user_id = ? ORDER BY id DESC",
+        (uid,)
+    ).fetchall()
     active_contract_id = request.args.get("contract_id")
-    if not active_contract_id and contracts:
-        active_contract_id = contracts[0]["id"]
-    
     if active_contract_id:
-        seed_default_dependencies_if_needed(int(active_contract_id))
+        if active_contract_id.isdigit():
+            get_owned_or_404("contract", int(active_contract_id), user_id=uid, db=db)
+        else:
+            abort(404)
+    elif contracts:
+        active_contract_id = contracts[0]["id"]
+
+    if active_contract_id:
+        seed_default_dependencies_if_needed(int(active_contract_id), user_id=uid)
 
     all_obligations = db.execute(
-        "SELECT id, clause_text, actor FROM obligations ORDER BY id ASC"
+        "SELECT o.id, o.clause_text, o.actor FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? ORDER BY o.id ASC",
+        (uid,)
     ).fetchall()
 
     return render_template(
@@ -238,27 +257,32 @@ def graph():
         all_obligations=all_obligations
     )
 
+
 @obligations_bp.route("/api/graph-data")
 def graph_data():
-    """API endpoint providing nodes and edges JSON formatted for vis-network."""
+    """API endpoint providing nodes and edges JSON formatted for vis-network, scoped to current_user."""
     db = get_db()
+    uid = current_user.id
     contract_id = request.args.get("contract_id")
 
-    query = "SELECT * FROM obligations"
-    params = []
-
     if contract_id:
-        query += " WHERE contract_id = ?"
-        params.append(contract_id)
-        seed_default_dependencies_if_needed(int(contract_id))
+        if not str(contract_id).isdigit():
+            abort(404)
+        get_owned_or_404("contract", int(contract_id), user_id=uid, db=db)
+        seed_default_dependencies_if_needed(int(contract_id), user_id=uid)
+        obligations = db.execute(
+            "SELECT o.* FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ? AND o.contract_id = ?",
+            (uid, int(contract_id))
+        ).fetchall()
     else:
-        contracts = db.execute("SELECT id FROM contracts").fetchall()
+        contracts = db.execute("SELECT id FROM contracts WHERE user_id = ?", (uid,)).fetchall()
         for c in contracts:
-            seed_default_dependencies_if_needed(c["id"])
+            seed_default_dependencies_if_needed(c["id"], user_id=uid)
+        obligations = db.execute(
+            "SELECT o.* FROM obligations o JOIN contracts c ON o.contract_id = c.id WHERE c.user_id = ?",
+            (uid,)
+        ).fetchall()
 
-    obligations = db.execute(query, params).fetchall()
-
-    # Color scheme adhering to design direction
     color_map = {
         "LOW": {"background": "rgba(16, 185, 129, 0.9)", "border": "#059669", "highlight": "#34d399"},
         "MEDIUM": {"background": "rgba(245, 158, 11, 0.9)", "border": "#d97706", "highlight": "#fbbf24"},
@@ -270,8 +294,7 @@ def graph_data():
     for o in obligations:
         risk = (o["risk_label"] or "LOW").upper()
         colors = color_map.get(risk, color_map["LOW"])
-        
-        # Clean label with clause summary
+
         snippet = (o["clause_text"] or "")[:45].strip()
         label = f"#{o['id']}: {snippet}...\n[{o['actor']}] • {risk} ({round(o['risk_score'] or 0, 1)})\nConf: {round(o['confidence'] or 0)}%"
 
@@ -287,17 +310,28 @@ def graph_data():
         })
         node_ids.add(o["id"])
 
-    # Fetch dependencies
-    dep_query = "SELECT d.id, d.upstream_id, d.downstream_id, d.note FROM dependencies d"
-    dep_params = []
     if contract_id:
-        dep_query += """
-            JOIN obligations o1 ON d.upstream_id = o1.id 
-            WHERE o1.contract_id = ?
-        """
-        dep_params.append(contract_id)
-
-    deps = db.execute(dep_query, dep_params).fetchall()
+        deps = db.execute(
+            """
+            SELECT d.id, d.upstream_id, d.downstream_id, d.note
+            FROM dependencies d
+            JOIN obligations o1 ON d.upstream_id = o1.id
+            JOIN contracts c ON o1.contract_id = c.id
+            WHERE c.user_id = ? AND o1.contract_id = ?
+            """,
+            (uid, int(contract_id))
+        ).fetchall()
+    else:
+        deps = db.execute(
+            """
+            SELECT d.id, d.upstream_id, d.downstream_id, d.note
+            FROM dependencies d
+            JOIN obligations o1 ON d.upstream_id = o1.id
+            JOIN contracts c ON o1.contract_id = c.id
+            WHERE c.user_id = ?
+            """,
+            (uid,)
+        ).fetchall()
 
     edges = []
     for d in deps:
@@ -315,6 +349,7 @@ def graph_data():
 
     return jsonify({"nodes": nodes, "edges": edges})
 
+
 @obligations_bp.route("/dependencies/add", methods=["POST"])
 def add_dependency():
     upstream_id = request.form.get("upstream_id")
@@ -330,10 +365,21 @@ def add_dependency():
         return redirect(request.referrer or url_for("obligations.graph"))
 
     db = get_db()
+    uid = current_user.id
+    try:
+        up_int = int(upstream_id)
+        down_int = int(downstream_id)
+    except ValueError:
+        abort(404)
+
+    # Verify both obligations belong to current_user
+    get_owned_or_404("obligation", up_int, user_id=uid, db=db)
+    get_owned_or_404("obligation", down_int, user_id=uid, db=db)
+
     try:
         db.execute(
             "INSERT INTO dependencies (upstream_id, downstream_id, note) VALUES (?, ?, ?)",
-            (upstream_id, downstream_id, note)
+            (up_int, down_int, note)
         )
         db.commit()
         flash("Dependency link created successfully.", "success")
@@ -342,19 +388,25 @@ def add_dependency():
 
     return redirect(request.referrer or url_for("obligations.graph"))
 
+
 @obligations_bp.route("/dependencies/delete/<int:dep_id>", methods=["POST"])
 def delete_dependency(dep_id):
     db = get_db()
+    uid = current_user.id
+    get_owned_or_404("dependency", dep_id, user_id=uid, db=db)
     db.execute("DELETE FROM dependencies WHERE id = ?", (dep_id,))
     db.commit()
     flash("Dependency link removed.", "info")
     return redirect(request.referrer or url_for("obligations.graph"))
 
+
 @obligations_bp.route("/api/explain/<int:obligation_id>")
 def api_explain(obligation_id):
     from engine.calculator import explain_score
     db = get_db()
-    data = explain_score(obligation_id, db=db)
+    uid = current_user.id
+    get_owned_or_404("obligation", obligation_id, user_id=uid, db=db)
+    data = explain_score(obligation_id, db=db, user_id=uid)
     if not data:
         return jsonify({"error": "Obligation not found"}), 404
     return jsonify(data)

@@ -1,6 +1,9 @@
 import os
+import json
+import uuid
 from pathlib import Path
 from flask import Blueprint, render_template, request, flash, redirect, url_for, session, current_app
+from flask_login import current_user
 from werkzeug.utils import secure_filename
 from app.database import get_db
 from engine.parsers.doc_parser import extract_text, split_into_clauses
@@ -8,30 +11,52 @@ from engine.llm_client import extract_clause_with_llm
 
 contracts_bp = Blueprint("contracts", __name__, url_prefix="/contracts")
 
-ALLOWED_EXTENSIONS = {"pdf", "docx", "doc", "txt"}
+ALLOWED_EXTENSIONS = {"pdf", "docx"}
+
 
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
 @contracts_bp.route("/")
 def index():
     db = get_db()
+    uid = current_user.id
     contracts = db.execute("""
         SELECT c.*, COUNT(o.id) as obligation_count 
         FROM contracts c 
         LEFT JOIN obligations o ON c.id = o.contract_id 
+        WHERE c.user_id = ?
         GROUP BY c.id 
         ORDER BY c.uploaded_at DESC
-    """).fetchall()
+    """, (uid,)).fetchall()
     return render_template("contracts/index.html", contracts=contracts)
+
+
+@contracts_bp.route("/load-sample", methods=["POST"])
+def load_sample():
+    """Load the sample battery-materials contract and demo scenario into the current user's account."""
+    from seed.load_demo import load_demo_data
+    try:
+        res = load_demo_data(user_id=current_user.id)
+        session["active_contract_id"] = res["contract_id"]
+        session["active_contract_title"] = res["contract_title"]
+        flash(
+            f"Sample contract '{res['contract_title']}' loaded into your account with {res['obligations_count']} obligations!",
+            "success"
+        )
+    except Exception as e:
+        flash(f"Failed to load sample contract: {e}", "danger")
+    return redirect(url_for("main.dashboard"))
+
 
 @contracts_bp.route("/upload", methods=["GET", "POST"])
 def upload():
     if request.method == "POST":
-        # Check if the user clicked "Load Seed Demo Contract"
+        uid = current_user.id
         use_demo = request.form.get("use_demo")
         demo_type = request.form.get("demo_type", "pdf")
-        
+
         file_path = None
         doc_title = None
         filename = None
@@ -50,27 +75,30 @@ def upload():
             if "contract_file" not in request.files:
                 flash("No file part provided.", "danger")
                 return redirect(request.url)
-            
+
             file = request.files["contract_file"]
             if file.filename == "":
                 flash("No file selected for ingestion.", "warning")
                 return redirect(request.url)
-            
+
             if file and allowed_file(file.filename):
-                filename = secure_filename(file.filename)
-                upload_dir = Path(current_app.config.get("UPLOAD_FOLDER", "uploads"))
-                upload_dir.mkdir(parents=True, exist_ok=True)
-                file_path = upload_dir / filename
+                safe_base = secure_filename(file.filename)
+                unique_prefix = uuid.uuid4().hex[:12]
+                filename = f"{unique_prefix}_{safe_base}"
+                base_upload_dir = Path(current_app.config.get("UPLOAD_FOLDER", "uploads"))
+                user_upload_dir = base_upload_dir / f"user_{uid}"
+                user_upload_dir.mkdir(parents=True, exist_ok=True)
+                file_path = user_upload_dir / filename
                 file.save(str(file_path))
             else:
-                flash("Invalid file type. Please upload a PDF or DOCX file.", "danger")
+                flash("Invalid file type. Only .pdf and .docx files (up to 10 MB) are permitted.", "danger")
                 return redirect(request.url)
 
         # Extract text and split into clauses
         try:
             raw_text = extract_text(str(file_path))
             clauses = split_into_clauses(raw_text)
-            
+
             if not clauses:
                 flash("Could not detect identifiable clauses in the document. Check file contents.", "warning")
                 return redirect(request.url)
@@ -93,9 +121,6 @@ def upload():
                     "deadline_date": extracted.get("deadline_date") or ""
                 })
 
-            import uuid
-            import json
-
             staging_token = str(uuid.uuid4())
             staging_data = {
                 "title": doc_title,
@@ -104,11 +129,13 @@ def upload():
                 "records": extracted_records
             }
 
-            upload_dir = Path(current_app.config.get("UPLOAD_FOLDER", "uploads"))
-            upload_dir.mkdir(parents=True, exist_ok=True)
-            staging_file = upload_dir / f"staging_{staging_token}.json"
-            with open(staging_file, "w", encoding="utf-8") as sf:
-                json.dump(staging_data, sf)
+            # Store staging data in the database (ephemeral-filesystem safe) scoped to current_user
+            db = get_db()
+            db.execute(
+                "INSERT INTO contract_stagings (token, user_id, title, filename, raw_text, records_json) VALUES (?, ?, ?, ?, ?, ?)",
+                (staging_token, uid, doc_title, filename, raw_text, json.dumps(extracted_records))
+            )
+            db.commit()
 
             session["staging_token"] = staging_token
 
@@ -121,21 +148,45 @@ def upload():
 
     return render_template("contracts/upload.html")
 
+
 def get_staging_contract():
     staging_token = session.get("staging_token")
     if not staging_token:
         return None
+    db = get_db()
+    uid = current_user.id
+    row = db.execute(
+        "SELECT title, filename, raw_text, records_json FROM contract_stagings WHERE token = ? AND user_id = ?",
+        (staging_token, uid)
+    ).fetchone()
+    if row:
+        try:
+            return {
+                "title": row["title"],
+                "filename": row["filename"],
+                "raw_text": row["raw_text"],
+                "records": json.loads(row["records_json"])
+            }
+        except Exception:
+            return None
+    # Fallback for legacy file staging if present in tests
     upload_dir = Path(current_app.config.get("UPLOAD_FOLDER", "uploads"))
     staging_file = upload_dir / f"staging_{staging_token}.json"
     if staging_file.exists():
         with open(staging_file, "r", encoding="utf-8") as sf:
-            import json
             return json.load(sf)
     return None
+
 
 def clear_staging_contract():
     staging_token = session.pop("staging_token", None)
     if staging_token:
+        db = get_db()
+        db.execute(
+            "DELETE FROM contract_stagings WHERE token = ? AND user_id = ?",
+            (staging_token, current_user.id)
+        )
+        db.commit()
         upload_dir = Path(current_app.config.get("UPLOAD_FOLDER", "uploads"))
         staging_file = upload_dir / f"staging_{staging_token}.json"
         if staging_file.exists():
@@ -144,14 +195,16 @@ def clear_staging_contract():
             except Exception:
                 pass
 
+
 @contracts_bp.route("/review", methods=["GET"])
 def review():
     staging = get_staging_contract()
     if not staging:
         flash("No active document extraction in review. Please upload an agreement first.", "warning")
         return redirect(url_for("contracts.upload"))
-    
+
     return render_template("contracts/review.html", staging=staging)
+
 
 @contracts_bp.route("/save", methods=["POST"])
 def save():
@@ -161,11 +214,12 @@ def save():
         return redirect(url_for("contracts.upload"))
 
     db = get_db()
-    
-    # 1. Insert contract document
+    uid = current_user.id
+
+    # 1. Insert contract document owned by current_user
     cur = db.execute(
-        "INSERT INTO contracts (title, filename, raw_text) VALUES (?, ?, ?)",
-        (staging["title"], staging["filename"], staging["raw_text"])
+        "INSERT INTO contracts (user_id, title, filename, raw_text) VALUES (?, ?, ?, ?)",
+        (uid, staging["title"], staging["filename"], staging["raw_text"])
     )
     contract_id = cur.lastrowid
 
@@ -181,7 +235,7 @@ def save():
         expected_state = request.form.get(f"expected_state_{idx}", "").strip()
         violation_condition = request.form.get(f"violation_condition_{idx}", "").strip()
         remediation_action = request.form.get(f"remediation_action_{idx}", "").strip()
-        
+
         target_val_str = request.form.get(f"target_value_{idx}", "").strip()
         target_val = float(target_val_str) if target_val_str else None
         unit = request.form.get(f"unit_{idx}", "").strip()
